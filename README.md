@@ -1,28 +1,36 @@
-# TapToSay
+# TapToSay 🌻
 
-**Tap a tile. It speaks.**
+Tap-to-speak AAC app: tap a tile, it says the word.
 
-TapToSay is a free, open-source AAC (Augmentative and Alternative Communication) app for non-speaking children. The child taps a picture tile and the device speaks the word — instant, one-touch communication.
+Built for Jaxon (nonverbal, ~5 y.o.) — Android first, then Apple. The mechanic comes from a classroom video: tap → instant speech.
 
-Built for real classrooms and real homes: simple grids, big buttons, real photos, and it just talks back.
+## Status (2026-09-15)
 
-## Why
+- [x] Project name locked, private repo `jmewing/taptosay`
+- [x] Android-first decision (sideload APK + Screen-Pin kiosk; no Apple fee yet)
+- [x] Flutter scaffold + TTS enabled (flutter_tts)
+- [x] v1 grid: 16 tap-to-speak tiles (Mom, Dad, Eat, Drink, Play, More, Stop, Help, Yes, No, Happy, Sad, Hurt, Bath, Sleep, All Done)
+- [ ] Test APK on BLU M10L (in progress: toolchain on automation server, tablet factory-reset)
+- [ ] Category grids (food, people, feelings, play, places)
+- [ ] Picture support (user photo → tile)
+- [ ] Kiosk/device-owner lock: boot straight into TapToSay
+- [ ] Ship to Play Store; then App Store
+- [ ] Teacher edition: multi-tablet grid sync (15 students now, 15 next year)
 
-Communication apps shouldn't cost an arm and a leg. Giving a child a voice is a basic need, not a luxury. TapToSay is free, open source (MIT), and ready for both **Android and iOS**.
+## Dev setup (automation server)
 
-## Features
+```bash
+source ~/android-toolchain/env.sh   # flutter + adb + java on PATH
+cd /srv/taptosay
+flutter run                          # hot-reload dev
+flutter build apk --debug             # sideload APK
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+```
 
-- **Tap-to-speak** — touch any tile, it speaks instantly (no sentence building required for the basic grids)
-- **Picture grids** by category: I Want, I Feel, I Need, Food, People, Activities, Schedule
-- **Customizable** — add your own photos, voices, and grids for each user
-- **Works offline** — no internet, no account, no tracking
-- **App-lock friendly** — designed to sit inside Android Screen Pinning / iOS Guided Access so kids stay in the app
+## Privacy
 
-## Platforms
-
-- **Android first** (single codebase, Flutter)
-- **iOS** after Android is tested
+No kid names in code, commits, or public surfaces. Code lives in this private repo only. Pictures of people stay on-device unless the user explicitly opts into cloud sync.
 
 ## License
 
-MIT — free to use, modify, and share. See [LICENSE](LICENSE).
+MIT — see LICENSE.
