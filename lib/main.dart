@@ -428,7 +428,7 @@ class WordGridScreen extends StatelessWidget {
       appBar: AppBar(
         centerTitle: true,
         title: Text(
-          '$emoji $title',
+          emoji.isEmpty ? title : '$emoji $title',
           style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
         backgroundColor: color,
@@ -462,7 +462,7 @@ class WordGridScreen extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => WordGridScreen(
                         title: d.subTitle ?? d.label,
-                        emoji: d.emoji,
+                        emoji: '', // no duplicate emoji/number on drill-down title
                         color: d.color,
                         sayings: d.sub!,
                         speak: speak,
