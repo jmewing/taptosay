@@ -1,0 +1,17 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Flutter/Dart (when app scaffolding lands)
+.dart_tool/
+.flutter-plugins*
+build/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+*.local

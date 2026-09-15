@@ -1,0 +1,23 @@
+{
+  "name": "taptosay",
+  "version": "0.1.0",
+  "description": "AAC picture-grid communication app — tap a tile, it speaks. Free & open source (MIT).",
+  "private": true,
+  "license": "MIT",
+  "author": {
+    "name": "Jeremy Ewing",
+    "email": "jackflash219@gmail.com"
+  },
+  "keywords": [
+    "aac",
+    "augmentative-communication",
+    "autism",
+    "speech",
+    "communication",
+    "tap-to-speak",
+    "accessibility"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
