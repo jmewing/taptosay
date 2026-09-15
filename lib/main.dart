@@ -5,7 +5,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 /// TapToSay — category-based tap-to-speak AAC app (Android-first).
 /// Landscape-only. Home = category grid (People / Food / I Feel / I Want /
 /// I Need / Play / Activities / ABC / Colors / Shapes / Numbers / My Day).
-/// Tap a category -> word grid -> tap a word -> it speaks.
+/// Tap a category -> it says the category name + word grid opens.
+/// Tap a word (or decade in Numbers) -> it speaks.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Landscape-only (also enforced in AndroidManifest).
@@ -34,12 +35,14 @@ class TapToSayApp extends StatelessWidget {
   }
 }
 
-/// One phrase/word with a big emoji. The unit of speech.
+/// One phrase/word with a big display glyph. The unit of speech.
 class Saying {
-  final String label; // spoken text + tile label
-  final String emoji;
+  final String label; // spoken text
+  final String emoji; // shown on the white badge (emoji, letter, or number)
   final Color color;
-  const Saying(this.label, this.emoji, this.color);
+  final List<Saying>? sub; // drill-down tiles (e.g. decade 20 -> 20..29)
+  final String? subTitle; // label for the drill-down screen
+  const Saying(this.label, this.emoji, this.color, {this.sub, this.subTitle});
 }
 
 /// A category: title on the home screen + its word grid.
@@ -52,9 +55,49 @@ class Category {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Word sets — from this morning's spec                               */
-/*  (People / Food / I FEEL / I WANT / I NEED / Play / Activities /    */
-/*   ABC / Colors / Shapes / Numbers / My Day)                        */
+/*  Shared color palette for generated tiles                          */
+/* ------------------------------------------------------------------ */
+
+const _palette = <Color>[
+  Color(0xFFEF5350), // red
+  Color(0xFF42A5F5), // blue
+  Color(0xFF66BB6A), // green
+  Color(0xFFFFCA28), // yellow
+  Color(0xFFAB47BC), // purple
+  Color(0xFF26C6DA), // cyan
+  Color(0xFFFF7043), // orange
+  Color(0xFF7E57C2), // violet
+  Color(0xFF26A69A), // teal
+  Color(0xFF8D6E63), // brown
+];
+
+/* ------------------------------------------------------------------ */
+/*  Number word helper (0-100)                                        */
+/* ------------------------------------------------------------------ */
+
+const _ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+const _teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+const _tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+String _numWord(int n) {
+  if (n < 10) return _ones[n];
+  if (n < 20) return _teens[n - 10];
+  if (n < 100) {
+    final t = n ~/ 10;
+    final o = n % 10;
+    return o == 0 ? _tens[t] : '${_tens[t]}-${_ones[o]}';
+  }
+  return 'one hundred';
+}
+
+/// A decade drill-down: base 10 -> 10..19, base 20 -> 20..29, etc.
+List<Saying> _decade(int base) => [
+      for (var i = 0; i < 10; i++)
+        Saying(_numWord(base + i), '${base + i}', _palette[i % _palette.length]),
+    ];
+
+/* ------------------------------------------------------------------ */
+/*  Word sets — from the morning spec + Jeremy's 17:07 refinements    */
 /* ------------------------------------------------------------------ */
 
 const _people = Category('People', '👨‍👩‍👧', Color(0xFF42A5F5), [
@@ -138,15 +181,14 @@ const _activities = Category('Activities', '🧩', Color(0xFF7E57C2), [
   Saying('Walk', '🚶', Color(0xFF26A69A)),
 ]);
 
-const _abc = Category('ABC', '🔤', Color(0xFFEC407A), [
-  Saying('A', '🅰️', Color(0xFFEF5350)),
-  Saying('B', '🅱️', Color(0xFF42A5F5)),
-  Saying('C', '©️', Color(0xFFFFA726)),
-  Saying('D', '🇩', Color(0xFF66BB6A)),
-  Saying('E', '🇪', Color(0xFFAB47BC)),
-  Saying('F', '🇫', Color(0xFF26C6DA)),
-  Saying('G', '🇬', Color(0xFF7E57C2)),
-  Saying('H', '🇭', Color(0xFFFF7043)),
+/// Full A-Z, every letter, spoken by letter name.
+final _abc = Category('ABC', '🔤', const Color(0xFFEC407A), [
+  for (var i = 0; i < 26; i++)
+    Saying(
+      String.fromCharCode(65 + i),
+      String.fromCharCode(65 + i),
+      _palette[i % _palette.length],
+    ),
 ]);
 
 const _colors = Category('Colors', '🎨', Color(0xFF29B6F6), [
@@ -169,17 +211,20 @@ const _shapes = Category('Shapes', '🔷', Color(0xFF26A69A), [
   Saying('Diamond', '🔷', Color(0xFF26C6DA)),
 ]);
 
-const _numbers = Category('Numbers', '🔢', Color(0xFFFFA726), [
-  Saying('One', '1️⃣', Color(0xFFEF5350)),
-  Saying('Two', '2️⃣', Color(0xFF42A5F5)),
-  Saying('Three', '3️⃣', Color(0xFF66BB6A)),
-  Saying('Four', '4️⃣', Color(0xFFFFCA28)),
-  Saying('Five', '5️⃣', Color(0xFFAB47BC)),
-  Saying('Six', '6️⃣', Color(0xFF26C6DA)),
-  Saying('Seven', '7️⃣', Color(0xFFFF7043)),
-  Saying('Eight', '8️⃣', Color(0xFF7E57C2)),
-  Saying('Nine', '9️⃣', Color(0xFF26A69A)),
-  Saying('Ten', '🔟', Color(0xFF8D6E63)),
+/// 0-9 direct tiles, decade drill-downs to 100.
+final _numbers = Category('Numbers', '🔢', const Color(0xFFFFA726), [
+  Saying('zero', '0', _palette[0]),
+  for (var i = 1; i <= 9; i++)
+    Saying(_numWord(i), '$i', _palette[i % _palette.length]),
+  for (var b = 10; b <= 90; b += 10)
+    Saying(
+      _numWord(b),
+      '$b',
+      _palette[(b ~/ 10) % _palette.length],
+      sub: _decade(b),
+      subTitle: '$b to ${b + 9}',
+    ),
+  Saying('one hundred', '100', _palette[9]),
 ]);
 
 const _schedules = Category('My Day', '🗓️', Color(0xFF8D6E63), [
@@ -193,7 +238,7 @@ const _schedules = Category('My Day', '🗓️', Color(0xFF8D6E63), [
   Saying('Today', '📅', Color(0xFF8D6E63)),
 ]);
 
-const _categories = <Category>[
+final _categories = <Category>[
   _people,
   _food,
   _feel,
@@ -240,8 +285,8 @@ class _CategoryHomeState extends State<CategoryHome> {
   }
 
   Future<void> _speak(String word) async {
-    HapticFeedback.lightImpact();
     try {
+      await HapticFeedback.lightImpact();
       await _tts.stop();
       await _tts.speak(word);
     } catch (_) {
@@ -261,28 +306,45 @@ class _CategoryHomeState extends State<CategoryHome> {
         backgroundColor: const Color(0xFF00838F),
         foregroundColor: Colors.white,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(8),
-        child: GridView.count(
-          crossAxisCount: 4,
-          mainAxisSpacing: 6,
-          crossAxisSpacing: 6,
-          childAspectRatio: 1.6,
-          children: [
-            for (final cat in _categories)
-              _CategoryTile(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          const cols = 4;
+          const spacing = 6.0;
+          const pad = 8.0;
+          final rows = (_categories.length / cols).ceil();
+          final tileW = (constraints.maxWidth - pad * 2 - spacing * (cols - 1)) / cols;
+          final tileH = (constraints.maxHeight - pad * 2 - spacing * (rows - 1)) / rows;
+          return GridView.builder(
+            padding: const EdgeInsets.all(pad),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              mainAxisSpacing: spacing,
+              crossAxisSpacing: spacing,
+              childAspectRatio: tileW / tileH,
+            ),
+            itemCount: _categories.length,
+            itemBuilder: (context, i) {
+              final cat = _categories[i];
+              return _CategoryTile(
                 category: cat,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => CategoryGrid(
-                      category: cat,
-                      speak: _speak,
+                onTap: () {
+                  _speak(cat.name); // speak the category name out loud
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => WordGridScreen(
+                        title: cat.name,
+                        emoji: cat.emoji,
+                        color: cat.color,
+                        sayings: cat.sayings,
+                        speak: _speak,
+                      ),
                     ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+                  );
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -298,39 +360,65 @@ class _CategoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: category.color,
-      borderRadius: BorderRadius.circular(18),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Colors.black26, width: 2),
+      ),
       elevation: 3,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(category.emoji, style: const TextStyle(fontSize: 34)),
-            const SizedBox(height: 4),
-            Text(
-              category.name,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Expanded(
+                flex: 3,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: _EmojiBadge(display: category.emoji),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Expanded(
+                flex: 2,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    category.name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class CategoryGrid extends StatelessWidget {
-  final Category category;
+/// Generic word/drill-down grid screen.
+class WordGridScreen extends StatelessWidget {
+  final String title;
+  final String emoji;
+  final Color color;
+  final List<Saying> sayings;
   final Future<void> Function(String) speak;
 
-  const CategoryGrid({
+  const WordGridScreen({
     super.key,
-    required this.category,
+    required this.title,
+    required this.emoji,
+    required this.color,
+    required this.sayings,
     required this.speak,
   });
 
@@ -340,24 +428,52 @@ class CategoryGrid extends StatelessWidget {
       appBar: AppBar(
         centerTitle: true,
         title: Text(
-          '${category.emoji} ${category.name}',
+          '$emoji $title',
           style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: category.color,
+        backgroundColor: color,
         foregroundColor: Colors.white,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(10),
-        child: GridView.count(
-          crossAxisCount: 5,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 0.85,
-          children: [
-            for (final s in category.sayings)
-              _WordTile(saying: s, onTap: () => speak(s.label)),
-          ],
-        ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          const cols = 5;
+          const spacing = 10.0;
+          const pad = 10.0;
+          final rows = (sayings.length / cols).ceil();
+          final tileW = (constraints.maxWidth - pad * 2 - spacing * (cols - 1)) / cols;
+          final tileH = (constraints.maxHeight - pad * 2 - spacing * (rows - 1)) / rows;
+          return GridView.builder(
+            padding: const EdgeInsets.all(pad),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              mainAxisSpacing: spacing,
+              crossAxisSpacing: spacing,
+              childAspectRatio: tileW / tileH,
+            ),
+            itemCount: sayings.length,
+            itemBuilder: (context, i) {
+              final s = sayings[i];
+              return _WordTile(
+                saying: s,
+                speak: speak,
+                onDecadeTap: (Saying d) {
+                  speak(d.label);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => WordGridScreen(
+                        title: d.subTitle ?? d.label,
+                        emoji: d.emoji,
+                        color: d.color,
+                        sayings: d.sub!,
+                        speak: speak,
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -365,34 +481,96 @@ class CategoryGrid extends StatelessWidget {
 
 class _WordTile extends StatelessWidget {
   final Saying saying;
-  final VoidCallback onTap;
+  final Future<void> Function(String) speak;
+  final void Function(Saying) onDecadeTap;
 
-  const _WordTile({required this.saying, required this.onTap});
+  const _WordTile({
+    required this.saying,
+    required this.speak,
+    required this.onDecadeTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final hasSub = saying.sub != null && saying.sub!.isNotEmpty;
     return Material(
       color: saying.color,
-      borderRadius: BorderRadius.circular(18),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Colors.black26, width: 2),
+      ),
       elevation: 3,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(saying.emoji, style: const TextStyle(fontSize: 44)),
-            const SizedBox(height: 6),
-            Text(
-              saying.label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => hasSub ? onDecadeTap(saying) : speak(saying.label),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Expanded(
+                flex: 3,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: _EmojiBadge(display: saying.emoji),
+                ),
               ),
+              const SizedBox(height: 2),
+              Expanded(
+                flex: 2,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    saying.label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// White circle badge so the glyph always stands out from the tile color.
+class _EmojiBadge extends StatelessWidget {
+  final String display;
+
+  const _EmojiBadge({required this.display});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 96,
+      height: 96,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 3)),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            display,
+            style: const TextStyle(
+              fontSize: 60,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
             ),
-          ],
+          ),
         ),
       ),
     );
