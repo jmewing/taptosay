@@ -38,6 +38,12 @@ class MainActivity : FlutterActivity() {
             } catch (_: Exception) {
                 // non-fatal
             }
+            // Bypass the keyguard so boot lands in TapToSay, not the lock screen.
+            try {
+                dpm.setKeyguardDisabled(admin, true)
+            } catch (_: Exception) {
+                // non-fatal
+            }
         }
     }
 }
