@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:image_picker/image_picker.dart';
+
+import 'photos.dart';
+import 'settings_screen.dart';
+import 'tile_face.dart';
 
 /// TapToSay — category-based tap-to-speak AAC app (Android-first).
 /// Landscape-only. Home = category grid (People / Food / I Feel / I Want /
@@ -238,7 +243,7 @@ const _schedules = Category('My Day', '🗓️', Color(0xFF8D6E63), [
   Saying('Today', '📅', Color(0xFF8D6E63)),
 ]);
 
-final _categories = <Category>[
+final allCategories = <Category>[
   _people,
   _food,
   _feel,
@@ -266,11 +271,35 @@ class CategoryHome extends StatefulWidget {
 
 class _CategoryHomeState extends State<CategoryHome> {
   final FlutterTts _tts = FlutterTts();
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     _initTts();
+    PhotoStore.instance.load(); // load on-device tile photos
+    _recoverLostPhoto(); // apply a pick that survived our process being killed
+  }
+
+  /// If the system picker killed us mid-pick (seen on the 2GB kiosk
+  /// tablet), image_picker preserved the result — claim it and apply it to
+  /// the tile that was being edited (markPending in settings_screen).
+  Future<void> _recoverLostPhoto() async {
+    try {
+      await PhotoStore.instance.load();
+      final lost = await _picker.retrieveLostData();
+      if (lost.file == null) return;
+      final (cat, label) = await PhotoStore.instance.takePending();
+      if (cat == null || label == null) return;
+      await PhotoStore.instance.setPhoto(cat, label, lost.file!.path);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('📸 $label photo restored after picker hiccup')),
+        );
+      }
+    } catch (_) {
+      // no lost data / plugin unavailable (widget tests) — fine
+    }
   }
 
   Future<void> _initTts() async {
@@ -305,13 +334,26 @@ class _CategoryHomeState extends State<CategoryHome> {
         ),
         backgroundColor: const Color(0xFF00838F),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, size: 28),
+            tooltip: 'Settings — tile photos',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SettingsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           const cols = 4;
           const spacing = 6.0;
           const pad = 8.0;
-          final rows = (_categories.length / cols).ceil();
+          final rows = (allCategories.length / cols).ceil();
           final tileW = (constraints.maxWidth - pad * 2 - spacing * (cols - 1)) / cols;
           final tileH = (constraints.maxHeight - pad * 2 - spacing * (rows - 1)) / rows;
           return GridView.builder(
@@ -322,9 +364,9 @@ class _CategoryHomeState extends State<CategoryHome> {
               crossAxisSpacing: spacing,
               childAspectRatio: tileW / tileH,
             ),
-            itemCount: _categories.length,
+            itemCount: allCategories.length,
             itemBuilder: (context, i) {
-              final cat = _categories[i];
+              final cat = allCategories[i];
               return _CategoryTile(
                 category: cat,
                 onTap: () {
@@ -336,6 +378,7 @@ class _CategoryHomeState extends State<CategoryHome> {
                         emoji: cat.emoji,
                         color: cat.color,
                         sayings: cat.sayings,
+                        category: cat.name,
                         speak: _speak,
                       ),
                     ),
@@ -370,34 +413,13 @@ class _CategoryTile extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(5),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Expanded(
-                flex: 3,
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: _EmojiBadge(display: category.emoji),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Expanded(
-                flex: 2,
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: Text(
-                    category.name,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          child: TileFace(
+            category: category.name,
+            label: category.name,
+            emoji: category.emoji,
+            color: category.color,
+            labelFontSize: 20,
+            badgeSize: 96,
           ),
         ),
       ),
@@ -411,6 +433,7 @@ class WordGridScreen extends StatelessWidget {
   final String emoji;
   final Color color;
   final List<Saying> sayings;
+  final String category; // category name for the on-device photo store
   final Future<void> Function(String) speak;
 
   const WordGridScreen({
@@ -419,6 +442,7 @@ class WordGridScreen extends StatelessWidget {
     required this.emoji,
     required this.color,
     required this.sayings,
+    required this.category,
     required this.speak,
   });
 
@@ -455,6 +479,7 @@ class WordGridScreen extends StatelessWidget {
               final s = sayings[i];
               return _WordTile(
                 saying: s,
+                category: category,
                 speak: speak,
                 onDecadeTap: (Saying d) {
                   speak(d.label);
@@ -465,6 +490,7 @@ class WordGridScreen extends StatelessWidget {
                         emoji: '', // no duplicate emoji/number on drill-down title
                         color: d.color,
                         sayings: d.sub!,
+                        category: category,
                         speak: speak,
                       ),
                     ),
@@ -481,11 +507,13 @@ class WordGridScreen extends StatelessWidget {
 
 class _WordTile extends StatelessWidget {
   final Saying saying;
+  final String category;
   final Future<void> Function(String) speak;
   final void Function(Saying) onDecadeTap;
 
   const _WordTile({
     required this.saying,
+    required this.category,
     required this.speak,
     required this.onDecadeTap,
   });
@@ -505,34 +533,13 @@ class _WordTile extends StatelessWidget {
         onTap: () => hasSub ? onDecadeTap(saying) : speak(saying.label),
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Expanded(
-                flex: 3,
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: _EmojiBadge(display: saying.emoji),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Expanded(
-                flex: 2,
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: Text(
-                    saying.label,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          child: TileFace(
+            category: category,
+            label: saying.label,
+            emoji: saying.emoji,
+            color: saying.color,
+            labelFontSize: 22,
+            badgeSize: 96,
           ),
         ),
       ),
@@ -540,39 +547,3 @@ class _WordTile extends StatelessWidget {
   }
 }
 
-/// White circle badge so the glyph always stands out from the tile color.
-class _EmojiBadge extends StatelessWidget {
-  final String display;
-
-  const _EmojiBadge({required this.display});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 3)),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: FittedBox(
-        fit: BoxFit.contain,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text(
-            display,
-            style: const TextStyle(
-              fontSize: 60,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
