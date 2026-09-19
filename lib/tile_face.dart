@@ -1,19 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
-import 'photos.dart';
-
-/// The face of a tile. If the user has set a personal photo for this
-/// tile (category|label), show the photo full-bleed with the label in a
-/// dark gradient bar. Otherwise show the classic white-circle emoji badge
-/// with the label underneath. Re-renders automatically when the photo
-/// store changes (revision notifier).
+/// The face of a tile: a white-circle emoji badge with the label underneath.
+/// (On-device tile photo editing was removed — tiles are managed from the
+/// portal, so a tile always renders its glyph badge.)
 class TileFace extends StatelessWidget {
-  final String category; // store key: category name
-  final String label; // store key: tile label + spoken text
-  final String emoji; // fallback glyph (badge)
-  final Color color; // fallback tile/tint color
+  final String category; // category name (kept for call-site symmetry)
+  final String label; // tile label + spoken text
+  final String emoji; // glyph shown in the badge
+  final Color color; // tile/tint color
   final double labelFontSize;
   final double badgeSize;
 
@@ -29,98 +23,36 @@ class TileFace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: PhotoStore.instance.revision,
-      builder: (context, _, __) {
-        return FutureBuilder<String?>(
-          future: PhotoStore.instance.pathFor(category, label),
-          builder: (context, snap) {
-            final path = snap.data;
-            if (path != null && path.isNotEmpty) {
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.file(
-                      File(path),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => ColoredBox(
-                        color: color,
-                        child: Center(child: _Badge(emoji: emoji, size: badgeSize)),
-                      ),
-                    ),
-                  ),
-                  // dark gradient so the label stays readable
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Color(0xB3000000)],
-                        stops: [0.55, 1.0],
-                      ),
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 6, left: 4, right: 4),
-                      child: FittedBox(
-                        fit: BoxFit.contain,
-                        child: Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: labelFontSize,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            shadows: const [
-                              Shadow(color: Colors.black87, blurRadius: 4),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Expanded(
+          flex: 3,
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: _Badge(emoji: emoji, size: badgeSize),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Expanded(
+          flex: 2,
+          child: FittedBox(
+            fit: BoxFit.contain,
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: labelFontSize,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: const [
+                  Shadow(color: Colors.black45, blurRadius: 4),
                 ],
-              );
-            }
-            // No photo: classic badge layout.
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: FittedBox(
-                    fit: BoxFit.contain,
-                    child: _Badge(emoji: emoji, size: badgeSize),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Expanded(
-                  flex: 2,
-                  child: FittedBox(
-                    fit: BoxFit.contain,
-                    child: Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: labelFontSize,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        shadows: const [
-                          Shadow(color: Colors.black45, blurRadius: 4),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

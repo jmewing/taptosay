@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:image_picker/image_picker.dart';
 
-import 'photos.dart';
-import 'settings_screen.dart';
+import 'provision_screen.dart';
+import 'sync.dart';
 import 'tile_face.dart';
+import 'vocab.dart';
 
 /// TapToSay — category-based tap-to-speak AAC app (Android-first).
 /// Landscape-only. Home = category grid (People / Food / I Feel / I Want /
 /// I Need / Play / Activities / ABC / Colors / Shapes / Numbers / My Day).
-/// Tap a category -> it says the category name + word grid opens.
-/// Tap a word (or decade in Numbers) -> it speaks.
+///
+/// Vocabulary comes from the server (`/api/config/sync`) on launch, with an
+/// on-device offline cache and built-in fallback. First run prompts for the
+/// four remote credentials (school ID, student ID, auth password, server URL).
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Landscape-only (also enforced in AndroidManifest).
@@ -19,6 +21,11 @@ Future<void> main() async {
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
+  // Hide the status bar (Wi-Fi / clock / battery) so the header sits flush
+  // at the top and every pixel goes to the buttons.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  // Load cached config (categories + PINs) before first frame.
+  await ConfigStore.instance.load();
   runApp(const TapToSayApp());
 }
 
@@ -40,224 +47,6 @@ class TapToSayApp extends StatelessWidget {
   }
 }
 
-/// One phrase/word with a big display glyph. The unit of speech.
-class Saying {
-  final String label; // spoken text
-  final String emoji; // shown on the white badge (emoji, letter, or number)
-  final Color color;
-  final List<Saying>? sub; // drill-down tiles (e.g. decade 20 -> 20..29)
-  final String? subTitle; // label for the drill-down screen
-  const Saying(this.label, this.emoji, this.color, {this.sub, this.subTitle});
-}
-
-/// A category: title on the home screen + its word grid.
-class Category {
-  final String name;
-  final String emoji;
-  final Color color;
-  final List<Saying> sayings;
-  const Category(this.name, this.emoji, this.color, this.sayings);
-}
-
-/* ------------------------------------------------------------------ */
-/*  Shared color palette for generated tiles                          */
-/* ------------------------------------------------------------------ */
-
-const _palette = <Color>[
-  Color(0xFFEF5350), // red
-  Color(0xFF42A5F5), // blue
-  Color(0xFF66BB6A), // green
-  Color(0xFFFFCA28), // yellow
-  Color(0xFFAB47BC), // purple
-  Color(0xFF26C6DA), // cyan
-  Color(0xFFFF7043), // orange
-  Color(0xFF7E57C2), // violet
-  Color(0xFF26A69A), // teal
-  Color(0xFF8D6E63), // brown
-];
-
-/* ------------------------------------------------------------------ */
-/*  Number word helper (0-100)                                        */
-/* ------------------------------------------------------------------ */
-
-const _ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
-const _teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
-const _tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
-
-String _numWord(int n) {
-  if (n < 10) return _ones[n];
-  if (n < 20) return _teens[n - 10];
-  if (n < 100) {
-    final t = n ~/ 10;
-    final o = n % 10;
-    return o == 0 ? _tens[t] : '${_tens[t]}-${_ones[o]}';
-  }
-  return 'one hundred';
-}
-
-/// A decade drill-down: base 10 -> 10..19, base 20 -> 20..29, etc.
-List<Saying> _decade(int base) => [
-      for (var i = 0; i < 10; i++)
-        Saying(_numWord(base + i), '${base + i}', _palette[i % _palette.length]),
-    ];
-
-/* ------------------------------------------------------------------ */
-/*  Word sets — from the morning spec + Jeremy's 17:07 refinements    */
-/* ------------------------------------------------------------------ */
-
-const _people = Category('People', '👨‍👩‍👧', Color(0xFF42A5F5), [
-  Saying('Mom', '👩', Color(0xFFEC407A)),
-  Saying('Dad', '👨', Color(0xFF42A5F5)),
-  Saying('Baby', '👶', Color(0xFFFFCA28)),
-  Saying('Teacher', '🧑‍🏫', Color(0xFF26A69A)),
-  Saying('Friend', '🧒', Color(0xFF8D6E63)),
-  Saying('Grandma', '👵', Color(0xFFAB47BC)),
-  Saying('Grandpa', '👴', Color(0xFF7E57C2)),
-  Saying('Me', '🙋', Color(0xFF66BB6A)),
-]);
-
-const _food = Category('Food', '🍎', Color(0xFFFFA726), [
-  Saying('Apple', '🍎', Color(0xFFEF5350)),
-  Saying('Banana', '🍌', Color(0xFFFFCA28)),
-  Saying('Crackers', '🥨', Color(0xFFFFB74D)),
-  Saying('Cereal', '🥣', Color(0xFFFFE082)),
-  Saying('Water', '💧', Color(0xFF29B6F6)),
-  Saying('Juice', '🧃', Color(0xFFFFA000)),
-  Saying('Milk', '🥛', Color(0xFFE0E0E0)),
-  Saying('Snack', '🍿', Color(0xFF8D6E63)),
-  Saying('Pizza', '🍕', Color(0xFFF4511E)),
-  Saying('Cookies', '🍪', Color(0xFFA1887F)),
-]);
-
-const _feel = Category('I Feel', '😊', Color(0xFFFF7043), [
-  Saying('Happy', '😊', Color(0xFFFFCA28)),
-  Saying('Sad', '😢', Color(0xFF7E57C2)),
-  Saying('Mad', '😠', Color(0xFFEF5350)),
-  Saying('Hurt', '🤕', Color(0xFF8D6E63)),
-  Saying('Tired', '😴', Color(0xFF5C6BC0)),
-  Saying('Scared', '😨', Color(0xFF26C6DA)),
-  Saying('Silly', '🤪', Color(0xFFFF7043)),
-  Saying('Calm', '😌', Color(0xFF66BB6A)),
-]);
-
-const _want = Category('I Want', '⭐', Color(0xFF26C6DA), [
-  Saying('More', '➕', Color(0xFF66BB6A)),
-  Saying('Stop', '✋', Color(0xFFEF5350)),
-  Saying('Help', '🆘', Color(0xFFFF7043)),
-  Saying('Play', '🧸', Color(0xFFAB47BC)),
-  Saying('Bath', '🛁', Color(0xFF29B6F6)),
-  Saying('Sleep', '🛏️', Color(0xFF5C6BC0)),
-  Saying('Outside', '🌳', Color(0xFF66BB6A)),
-  Saying('Music', '🎵', Color(0xFFEC407A)),
-]);
-
-const _need = Category('I Need', '🙏', Color(0xFF66BB6A), [
-  Saying('Yes', '✅', Color(0xFF4CAF50)),
-  Saying('No', '❌', Color(0xFFF44336)),
-  Saying('This one', '👉', Color(0xFF42A5F5)),
-  Saying('That one', '👈', Color(0xFF26A69A)),
-  Saying('Break', '☕', Color(0xFF8D6E63)),
-  Saying('Toilet', '🚻', Color(0xFF7E57C2)),
-  Saying('Warm', '🔥', Color(0xFFFF7043)),
-  Saying('Cold', '❄️', Color(0xFF29B6F6)),
-]);
-
-const _play = Category('Play', '🫧', Color(0xFFAB47BC), [
-  Saying('Bubbles', '🫧', Color(0xFF29B6F6)),
-  Saying('Trampoline', '🤸', Color(0xFFFFA726)),
-  Saying('Pool', '🏊', Color(0xFF26C6DA)),
-  Saying('The Cube', '🧊', Color(0xFF90A4AE)),
-  Saying('Ball', '⚽', Color(0xFF66BB6A)),
-  Saying('Swing', '🛝', Color(0xFF42A5F5)),
-  Saying('Blocks', '🧱', Color(0xFF8D6E63)),
-  Saying('Cars', '🚗', Color(0xFFEF5350)),
-  Saying('Jump', '🦘', Color(0xFFAB47BC)),
-  Saying('Spin', '🌀', Color(0xFF26C6DA)),
-]);
-
-const _activities = Category('Activities', '🧩', Color(0xFF7E57C2), [
-  Saying('Read', '📖', Color(0xFF5C6BC0)),
-  Saying('Draw', '🖍️', Color(0xFFFF7043)),
-  Saying('Music', '🎵', Color(0xFFEC407A)),
-  Saying('Dance', '💃', Color(0xFFAB47BC)),
-  Saying('Run', '🏃', Color(0xFF66BB6A)),
-  Saying('Jump', '🦘', Color(0xFFFFCA28)),
-  Saying('Swim', '🏊', Color(0xFF26C6DA)),
-  Saying('Walk', '🚶', Color(0xFF26A69A)),
-]);
-
-/// Full A-Z, every letter, spoken by letter name.
-final _abc = Category('ABC', '🔤', const Color(0xFFEC407A), [
-  for (var i = 0; i < 26; i++)
-    Saying(
-      String.fromCharCode(65 + i),
-      String.fromCharCode(65 + i),
-      _palette[i % _palette.length],
-    ),
-]);
-
-const _colors = Category('Colors', '🎨', Color(0xFF29B6F6), [
-  Saying('Red', '🔴', Color(0xFFEF5350)),
-  Saying('Blue', '🔵', Color(0xFF42A5F5)),
-  Saying('Green', '🟢', Color(0xFF4CAF50)),
-  Saying('Yellow', '🟡', Color(0xFFFFCA28)),
-  Saying('Purple', '🟣', Color(0xFFAB47BC)),
-  Saying('Orange', '🟠', Color(0xFFFF7043)),
-  Saying('Pink', '🌸', Color(0xFFEC407A)),
-  Saying('Black', '⚫', Color(0xFF37474F)),
-]);
-
-const _shapes = Category('Shapes', '🔷', Color(0xFF26A69A), [
-  Saying('Circle', '⭕', Color(0xFF42A5F5)),
-  Saying('Square', '🟦', Color(0xFF1E88E5)),
-  Saying('Triangle', '🔺', Color(0xFFEF5350)),
-  Saying('Star', '⭐', Color(0xFFFFCA28)),
-  Saying('Heart', '❤️', Color(0xFFEC407A)),
-  Saying('Diamond', '🔷', Color(0xFF26C6DA)),
-]);
-
-/// 0-9 direct tiles, decade drill-downs to 100.
-final _numbers = Category('Numbers', '🔢', const Color(0xFFFFA726), [
-  Saying('zero', '0', _palette[0]),
-  for (var i = 1; i <= 9; i++)
-    Saying(_numWord(i), '$i', _palette[i % _palette.length]),
-  for (var b = 10; b <= 90; b += 10)
-    Saying(
-      _numWord(b),
-      '$b',
-      _palette[(b ~/ 10) % _palette.length],
-      sub: _decade(b),
-      subTitle: '$b to ${b + 9}',
-    ),
-  Saying('one hundred', '100', _palette[9]),
-]);
-
-const _schedules = Category('My Day', '🗓️', Color(0xFF8D6E63), [
-  Saying('Morning', '🌅', Color(0xFFFFCA28)),
-  Saying('School', '🏫', Color(0xFF42A5F5)),
-  Saying('Lunch', '🍱', Color(0xFFFFA726)),
-  Saying('Home', '🏠', Color(0xFF66BB6A)),
-  Saying('Bedtime', '🌙', Color(0xFF5C6BC0)),
-  Saying('Now', '⏰', Color(0xFF26C6DA)),
-  Saying('Later', '⏳', Color(0xFFAB47BC)),
-  Saying('Today', '📅', Color(0xFF8D6E63)),
-]);
-
-final allCategories = <Category>[
-  _people,
-  _food,
-  _feel,
-  _want,
-  _need,
-  _play,
-  _activities,
-  _abc,
-  _colors,
-  _shapes,
-  _numbers,
-  _schedules,
-];
-
 /* ------------------------------------------------------------------ */
 /*  Screens                                                           */
 /* ------------------------------------------------------------------ */
@@ -271,34 +60,24 @@ class CategoryHome extends StatefulWidget {
 
 class _CategoryHomeState extends State<CategoryHome> {
   final FlutterTts _tts = FlutterTts();
-  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     _initTts();
-    PhotoStore.instance.load(); // load on-device tile photos
-    _recoverLostPhoto(); // apply a pick that survived our process being killed
+    _syncOnLaunch();
   }
 
-  /// If the system picker killed us mid-pick (seen on the 2GB kiosk
-  /// tablet), image_picker preserved the result — claim it and apply it to
-  /// the tile that was being edited (markPending in settings_screen).
-  Future<void> _recoverLostPhoto() async {
+  /// On launch, fetch config from the server (if provisioned). Silently
+  /// falls back to the offline cache / built-ins on any failure.
+  Future<void> _syncOnLaunch() async {
     try {
-      await PhotoStore.instance.load();
-      final lost = await _picker.retrieveLostData();
-      if (lost.file == null) return;
-      final (cat, label) = await PhotoStore.instance.takePending();
-      if (cat == null || label == null) return;
-      await PhotoStore.instance.setPhoto(cat, label, lost.file!.path);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('📸 $label photo restored after picker hiccup')),
-        );
-      }
+      await ConfigStore.instance.load();
+      if (!ConfigStore.instance.isProvisioned) return;
+      await ConfigStore.instance.sync();
+      if (mounted) setState(() {});
     } catch (_) {
-      // no lost data / plugin unavailable (widget tests) — fine
+      // offline or credentials changed — keep the cache / built-ins
     }
   }
 
@@ -323,72 +102,223 @@ class _CategoryHomeState extends State<CategoryHome> {
     }
   }
 
+  /// Numeric PIN gate. Shows a number-pad dialog and resolves true only if
+  /// the entered digits match [pin]. Used to protect Settings and Exit.
+  Future<bool> _promptPin(String pin) async {
+    final controller = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Enter code'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            obscureText: true,
+            maxLength: 6,
+            style: const TextStyle(fontSize: 24, letterSpacing: 8),
+            textAlign: TextAlign.center,
+            decoration: const InputDecoration(
+              counterText: '',
+              hintText: '••••',
+            ),
+            onSubmitted: (_) => Navigator.of(ctx).pop(true),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok != true) return false;
+    return controller.text == pin;
+  }
+
+  /// Unlock kiosk mode and drop to the normal launcher.
+  Future<void> _exitKiosk() async {
+    const channel = MethodChannel('com.jmewing.taptosay/kiosk');
+    try {
+      await channel.invokeMethod('stopLockTask');
+    } catch (_) {
+      // ignore — still try to go home below
+    }
+    try {
+      await channel.invokeMethod('goHome');
+    } catch (_) {
+      // ignore
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final categories = ConfigStore.instance.categories;
+
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 44,
         centerTitle: true,
         title: const Text(
-          'TapToSay 🌻',
-          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+          'Tap To Say',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         backgroundColor: const Color(0xFF00838F),
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings, size: 28),
-            tooltip: 'Settings — tile photos',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const SettingsScreen(),
-                ),
+            icon: const Icon(Icons.sync, size: 22),
+            tooltip: 'Sync config',
+            onPressed: () async {
+              try {
+                await ConfigStore.instance.sync();
+                if (!mounted) return;
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('✅ Synced')),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Sync failed: $e')),
+                );
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings, size: 22),
+            tooltip: 'Connect / settings',
+            onPressed: () async {
+              final pin = ConfigStore.instance.settingsPin;
+              if (pin.isEmpty) {
+                // Not synced yet; allow setup once so the tablet can connect
+                // for the very first time without a PIN. After sync it will be
+                // protected.
+                await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => const ProvisionScreen()),
+                );
+                if (mounted) setState(() {});
+                return;
+              }
+              final ok = await _promptPin(pin);
+              if (!mounted) return;
+              if (!ok) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Wrong code')),
+                );
+                return;
+              }
+              await Navigator.of(context).push<bool>(
+                MaterialPageRoute(builder: (_) => const ProvisionScreen()),
               );
+              if (mounted) setState(() {});
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.exit_to_app, size: 22),
+            tooltip: 'Exit',
+            onPressed: () async {
+              final pin = ConfigStore.instance.exitPin;
+              if (pin.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Exit PIN not configured yet — sync with the server first')),
+                );
+                return;
+              }
+              final ok = await _promptPin(pin);
+              if (!mounted) return;
+              if (!ok) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Wrong code')),
+                );
+                return;
+              }
+              await _exitKiosk();
             },
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          const cols = 4;
-          const spacing = 6.0;
-          const pad = 8.0;
-          final rows = (allCategories.length / cols).ceil();
-          final tileW = (constraints.maxWidth - pad * 2 - spacing * (cols - 1)) / cols;
-          final tileH = (constraints.maxHeight - pad * 2 - spacing * (rows - 1)) / rows;
-          return GridView.builder(
-            padding: const EdgeInsets.all(pad),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: cols,
-              mainAxisSpacing: spacing,
-              crossAxisSpacing: spacing,
-              childAspectRatio: tileW / tileH,
+      body: ConfigStore.instance.isProvisioned
+          ? _categoryGrid(context, categories)
+          : _unprovisioned(context),
+    );
+  }
+
+  Widget _unprovisioned(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'This tablet is not connected yet.',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            itemCount: allCategories.length,
-            itemBuilder: (context, i) {
-              final cat = allCategories[i];
-              return _CategoryTile(
-                category: cat,
-                onTap: () {
-                  _speak(cat.name); // speak the category name out loud
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => WordGridScreen(
-                        title: cat.name,
-                        emoji: cat.emoji,
-                        color: cat.color,
-                        sayings: cat.sayings,
-                        category: cat.name,
-                        speak: _speak,
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          );
-        },
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () async {
+                final done = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(builder: (_) => const ProvisionScreen()),
+                );
+                if (done == true && mounted) setState(() {});
+              },
+              child: const Text('Set up tablet'),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _categoryGrid(BuildContext context, List<Category> categories) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const cols = 4;
+        const spacing = 6.0;
+        const pad = 8.0;
+        final rows = (categories.length / cols).ceil();
+        final tileW = (constraints.maxWidth - pad * 2 - spacing * (cols - 1)) / cols;
+        final tileH = (constraints.maxHeight - pad * 2 - spacing * (rows - 1)) / rows;
+        return GridView.builder(
+          padding: const EdgeInsets.all(pad),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            mainAxisSpacing: spacing,
+            crossAxisSpacing: spacing,
+            childAspectRatio: tileW / tileH,
+          ),
+          itemCount: categories.length,
+          itemBuilder: (context, i) {
+            final cat = categories[i];
+            return _CategoryTile(
+              category: cat,
+              onTap: () {
+                _speak(cat.name); // speak the category name out loud
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => WordGridScreen(
+                      title: cat.name,
+                      emoji: cat.emoji,
+                      color: cat.color,
+                      sayings: cat.sayings,
+                      category: cat.name,
+                      speak: _speak,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -546,4 +476,3 @@ class _WordTile extends StatelessWidget {
     );
   }
 }
-
