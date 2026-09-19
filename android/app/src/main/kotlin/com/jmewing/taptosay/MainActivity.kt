@@ -82,19 +82,27 @@ class MainActivity : FlutterActivity() {
                     "goHome" -> {
                         try {
                             // TapToSay is the persistent HOME, so a generic HOME
-                            // intent would loop back here. Launch the Samsung
-                            // launcher explicitly so the adult can use the tablet.
-                            val launcher = ComponentName(
-                                "com.sec.android.app.launcher",
-                                "com.sec.android.app.launcher.activities.LauncherActivity"
-                            )
-                            val home = Intent(Intent.ACTION_MAIN).apply {
+                            // intent loops back here. Resolve the REAL launcher the
+                            // device shipped with (could be Samsung, BLU, etc.) and
+                            // launch it explicitly so the adult can use the tablet.
+                            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                                 addCategory(Intent.CATEGORY_HOME)
-                                component = launcher
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
-                            startActivity(home)
-                            result.success(true)
+                            val launcher = packageManager.queryIntentActivities(
+                                homeIntent,
+                                0
+                            )
+                                .map { it.activityInfo }        // ResolveInfo -> ActivityInfo
+                                .firstOrNull { it.packageName != packageName } // skip TapToSay
+                            if (launcher != null) {
+                                val target = Intent(Intent.ACTION_MAIN).apply {
+                                    addCategory(Intent.CATEGORY_HOME)
+                                    component = ComponentName(launcher.packageName, launcher.name)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(target)
+                            }
+                            result.success(launcher != null)
                         } catch (_: Exception) {
                             result.success(false)
                         }
