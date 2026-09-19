@@ -28,12 +28,15 @@ class MainActivity : FlutterActivity() {
         // Device owner can be granted AFTER first launch, and lock-task must be
         // engaged while the activity is RESUMED (calling it in onCreate throws).
         initKiosk()
-        if (dpm.isDeviceOwnerApp(packageName)) {
-            try {
-                startLockTask()
-            } catch (_: Exception) {
-                // non-fatal
-            }
+        // Attempt to pin the app to the foreground on EVERY resume:
+        //  - school/device-owner tablet -> hard kiosk lock (as before)
+        //  - BYOD tablet (no device owner)   -> Android screen pinning, i.e.
+        //    Guided-Access-style foreground hold; requires "Screen pinning"
+        //    enabled in Settings and may prompt once, so it is best-effort.
+        try {
+            startLockTask()
+        } catch (_: Exception) {
+            // not allowed (screen pinning off) or not foreground — non-fatal
         }
     }
 
@@ -101,7 +104,7 @@ class MainActivity : FlutterActivity() {
                     }
                     "startLockTask" -> {
                         try {
-                            if (dpm.isDeviceOwnerApp(packageName)) startLockTask()
+                            startLockTask()
                             result.success(true)
                         } catch (_: Exception) {
                             result.success(false)
