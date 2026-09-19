@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.PersistableBundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -21,6 +22,31 @@ class MainActivity : FlutterActivity() {
         dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         admin = ComponentName(this, TapToSayDeviceAdminReceiver::class.java)
         initKiosk()
+        captureProvisioningExtras(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureProvisioningExtras(intent)
+    }
+
+    /**
+     * Device-owner QR/NFC provisioning delivers the admin-extras bundle on the
+     * ACTION_PROVISIONING_SUCCESSFUL intent (Android 8+). Persist them to a
+     * shared prefs file the Flutter side can read via the kiosk channel.
+     */
+    private fun captureProvisioningExtras(intent: Intent?) {
+        if (intent == null) return
+        val extras = intent.getParcelableExtra(
+            DevicePolicyManager.EXTRA_PROVISIONING_ADMIN_EXTRAS_BUNDLE
+        ) as? PersistableBundle ?: return
+        val prefs = getSharedPreferences(TapToSayDeviceAdminReceiver.PREFS_NAME, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        for (key in TapToSayDeviceAdminReceiver.EXTRAS_KEYS) {
+            extras.getString(key)?.let { editor.putString(key, it) }
+        }
+        editor.apply()
     }
 
     override fun onResume() {
@@ -109,6 +135,15 @@ class MainActivity : FlutterActivity() {
                         } catch (_: Exception) {
                             result.success(false)
                         }
+                    }
+                    "getProvisioningExtras" -> {
+                        val prefs = getSharedPreferences(
+                            TapToSayDeviceAdminReceiver.PREFS_NAME, Context.MODE_PRIVATE)
+                        val out = HashMap<String, String>()
+                        for (key in TapToSayDeviceAdminReceiver.EXTRAS_KEYS) {
+                            prefs.getString(key, null)?.let { out[key] = it }
+                        }
+                        result.success(out)
                     }
                     else -> result.notImplemented()
                 }

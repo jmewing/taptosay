@@ -112,6 +112,26 @@ class ConfigStore {
     await _save();
   }
 
+  /// Apply the admin-extras bundle delivered during device-owner QR/NFC
+  /// provisioning (keys: server_url, student_id, school_tea_id, auth_password).
+  /// Returns true if enough fields were present to mark the tablet provisioned.
+  Future<bool> applyProvisioningExtras(Map<String, String> extras) async {
+    final school = (extras['school_tea_id'] ?? extras['school_id'] ?? '').trim();
+    final student = (extras['student_id'] ?? '').trim();
+    final auth = (extras['auth_password'] ?? '');
+    final url = (extras['server_url'] ?? '').trim();
+    if (school.isEmpty || student.isEmpty || auth.isEmpty || url.isEmpty) {
+      return false;
+    }
+    await provision(
+      schoolId: school,
+      studentId: student,
+      authPassword: auth,
+      serverUrl: url,
+    );
+    return true;
+  }
+
   String _normalize(String url) {
     var s = url.trim();
     if (s.isEmpty) return s;
