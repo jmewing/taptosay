@@ -15,3 +15,8 @@ Thumbs.db
 # Environment / secrets
 .env
 *.local
+
+# Signing keys (never commit)
+android/key.properties
+*.jks
+*.keystore
