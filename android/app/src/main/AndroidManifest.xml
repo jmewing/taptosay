@@ -42,6 +42,21 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <!-- Device-owner provisioning mode resolver (Android 12+ / 16). The
+             platform sends ACTION_GET_PROVISIONING_MODE to determine whether
+             it's provisioning a device owner (kiosk) or managed profile. Without
+             this, provisioning aborts with "unable to resolve
+             ACTION_GET_PROVISIONING_MODE" -> "contact your IT admin". -->
+        <activity
+            android:name=".GetProvisioningModeActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
