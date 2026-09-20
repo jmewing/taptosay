@@ -148,12 +148,11 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     "getProvisioningExtras" -> {
-                        val prefs = getSharedPreferences(
-                            TapToSayDeviceAdminReceiver.PREFS_NAME, Context.MODE_PRIVATE)
+                        // Extras are captured (from the GET_PROVISIONING_MODE
+                        // intent) into external app storage during provisioning;
+                        // read that back so first launch auto-provisions.
                         val out = HashMap<String, String>()
-                        for (key in TapToSayDeviceAdminReceiver.EXTRAS_KEYS) {
-                            prefs.getString(key, null)?.let { out[key] = it }
-                        }
+                        out.putAll(ProvisioningLog.readExtrasFile(this))
                         result.success(out)
                     }
                     else -> result.notImplemented()

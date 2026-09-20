@@ -58,6 +58,40 @@ object ProvisioningLog {
         return b.toString()
     }
 
+    /** Write the admin-extras bundle to a JSON file in external app storage,
+     *  readable by the app on first launch as well as by an ADB shell.
+     *  Returns the file path written, or null on failure. */
+    @Synchronized
+    fun writeExtrasFile(context: Context, extras: PersistableBundle): File? {
+        return try {
+            val dir = context.getExternalFilesDir(null) ?: context.filesDir
+            val f = File(dir, "admin_extras.json")
+            val map = LinkedHashMap<String, String>()
+            for (k in extras.keySet()) {
+                extras.getString(k)?.let { map[k] = it }
+            }
+            val json = org.json.JSONObject(map).toString()
+            FileWriter(f, false).use { it.append(json) }
+            f
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Read the admin-extras file written during provisioning, if present. */
+    fun readExtrasFile(context: Context): Map<String, String> {
+        return try {
+            val dir = context.getExternalFilesDir(null) ?: context.filesDir
+            val f = File(dir, "admin_extras.json")
+            if (!f.exists()) return emptyMap()
+            val text = f.readText()
+            val obj = org.json.JSONObject(text)
+            obj.keys().asSequence().associateWith { obj.optString(it) }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
     /** Append a timestamped line to logcat AND the persistent on-disk log. */
     @Synchronized
     fun record(context: Context, tag: String, message: String) {
