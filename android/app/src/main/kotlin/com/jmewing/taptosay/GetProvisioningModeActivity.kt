@@ -18,6 +18,10 @@ class GetProvisioningModeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ProvisioningLog.record(
+            this, "GET_PROVISIONING_MODE",
+            "onCreate intent=${ProvisioningLog.describeIntent(intent)}"
+        )
         val result = Intent().putExtra(
             DevicePolicyManager.EXTRA_PROVISIONING_MODE,
             DevicePolicyManager.PROVISIONING_MODE_FULLY_MANAGED_DEVICE,
