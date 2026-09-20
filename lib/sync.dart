@@ -98,6 +98,25 @@ class ConfigStore {
 
   DateTime? get lastSyncAt => _lastSyncAt;
 
+  /// Absolute URL for an uploaded custom photo (media_id). Requires provisioning
+  /// creds (the tablet authenticates to the media endpoint the same way it
+  /// authenticates to sync). Returns null when not provisioned.
+  String? mediaUrl(int? mediaId) {
+    if (mediaId == null || mediaId <= 0) return null;
+    if (_serverUrl == null) return null;
+    final base = _serverUrl!.replaceAll(RegExp(r'/+$'), '');
+    return '$base/api/media/$mediaId?school_id=$_schoolId&student_id=$_studentId&auth_password=$_authPassword';
+  }
+
+  /// Absolute URL for a Mulberry AAC symbol PNG (static set served by the API).
+  String? symbolUrl(String? symbol) {
+    if (symbol == null || symbol.isEmpty) return null;
+    if (_serverUrl == null) return null;
+    final base = _serverUrl!.replaceAll(RegExp(r'/+$'), '');
+    final name = Uri.encodeComponent(symbol);
+    return '$base/mulberry/$name.png';
+  }
+
   /// Save the four provisioning details (first-run setup).
   Future<void> provision({
     required String schoolId,
@@ -164,12 +183,16 @@ class ConfigStore {
                   {
                     'name': c.name,
                     'emoji': c.emoji,
+                    if (c.symbol != null) 'symbol': c.symbol,
+                    if (c.mediaId != null) 'media_id': c.mediaId,
                     'color': '#${c.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
                     'sayings': [
                       for (final s in c.sayings)
                         {
                           'label': s.label,
                           'emoji': s.emoji,
+                          if (s.symbol != null) 'symbol': s.symbol,
+                          if (s.mediaId != null) 'media_id': s.mediaId,
                           'color': '#${s.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
                           if (s.subTitle != null) 'subTitle': s.subTitle,
                           if (s.sub != null)
@@ -178,6 +201,8 @@ class ConfigStore {
                                 {
                                   'label': d.label,
                                   'emoji': d.emoji,
+                                  if (d.symbol != null) 'symbol': d.symbol,
+                                  if (d.mediaId != null) 'media_id': d.mediaId,
                                   'color': '#${d.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
                                 }
                             ],
