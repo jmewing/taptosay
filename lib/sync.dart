@@ -29,6 +29,34 @@ class ConfigStore {
   String? _authPassword;
   String? _serverUrl;
 
+  /// Public defaults. The primary is the DNS name; [fallbackServerUrls] adds the
+  /// same host by raw IP:port, so a network that blocks or cannot resolve DNS
+  /// can still reach the API. Never a LAN address — a tablet that leaves the
+  /// building must still sync.
+  static const String defaultServerUrl = 'https://api.taptosay.app';
+  static const List<String> fallbackServerUrls = <String>[
+    'https://api.taptosay.app',
+    'http://129.121.127.233:8088',
+  ];
+
+  /// True for hosts that only work on a local network — adopting or defaulting to
+  /// one of these is what strands a shipped tablet.
+  static bool isPrivateHost(String url) {
+    final u = url.trim().toLowerCase();
+    return u.contains('localhost') ||
+        u.contains('127.0.0.1') ||
+        u.contains('192.168.') ||
+        u.contains('10.') ||
+        u.contains('172.16.') ||
+        u.contains('172.17.') ||
+        u.contains('172.18.') ||
+        u.contains('172.19.') ||
+        u.contains('172.2') ||
+        u.contains('172.30.') ||
+        u.contains('172.31.') ||
+        u.contains('.local');
+  }
+
   // Cached result
   List<Category>? _cachedCategories;
   String? _settingsPin;
@@ -62,6 +90,13 @@ class ConfigStore {
         _studentId = j['student_id'] as String?;
         _authPassword = j['auth_password'] as String?;
         _serverUrl = j['server_url'] as String?;
+        // Self-heal a URL that can no longer work. Older builds/QRs baked in a
+        // LAN address (e.g. http://192.168.12.5:8088); a tablet that has left
+        // that network would otherwise retry a dead host forever and never
+        // sync. Promote it to the public default instead of trusting the cache.
+        if (_serverUrl != null && isPrivateHost(_serverUrl!)) {
+          _serverUrl = defaultServerUrl;
+        }
         _settingsPin = j['settings_pin'] as String?;
         _exitPin = j['exit_pin'] as String?;
         final raw = j['last_sync_at'] as String?;
@@ -81,6 +116,22 @@ class ConfigStore {
 
   bool get isProvisioned =>
       _schoolId != null && _studentId != null && _authPassword != null && _serverUrl != null;
+
+  /// Candidate base URLs to try, in order: the configured/pooled server first,
+  /// then the public fallbacks. De-duplicated, and the plain-HTTP IP fallback
+  /// is skipped whenever the primary is already an HTTPS host (nothing to gain
+  /// by downgrading transport on a working network).
+  List<String> get _serverCandidates {
+    final out = <String>[];
+    final primary = _serverUrl?.replaceAll(RegExp(r'/+$'), '');
+    if (primary != null && primary.isNotEmpty) out.add(primary);
+    for (final f in fallbackServerUrls) {
+      final u = f.replaceAll(RegExp(r'/+$'), '');
+      if (out.contains(u)) continue;
+      out.add(u);
+    }
+    return out;
+  }
 
   String? get schoolId => _schoolId;
   String? get studentId => _studentId;
@@ -215,18 +266,72 @@ class ConfigStore {
     revision.value++;
   }
 
-  /// POST /api/config/sync. Returns parsed categories on success.
+  /// POST /api/config/sync. Tries the configured server, then the public
+  /// fallbacks (the same API by raw IP:port) so a network that cannot resolve
+  /// DNS still syncs. Returns parsed categories on success.
   /// Throws [SyncException] with a user-facing message on failure.
   Future<List<Category>> sync() async {
     await load();
     if (!isProvisioned) {
       throw const SyncException('Not provisioned yet');
     }
+    final candidates = _serverCandidates;
+    String? lastMsg;
 
+    for (var i = 0; i < candidates.length; i++) {
+      final base = candidates[i];
+      final isLast = i == candidates.length - 1;
+      String? failure;
+      try {
+        final j = await _postSync(base);
+        // Success: adopt the server's own identity as the saved URL when it
+        // offers one, so the tablet converges on the pooled host afterwards.
+        final echoed = (j['server_url'] as String?)?.trim();
+        final adopt = (echoed != null && echoed.isNotEmpty && !isPrivateHost(echoed))
+            ? _normalize(echoed)
+            : base;
+        await _applySyncResult(j, adopt);
+        return categories;
+      } on SyncException catch (e) {
+        failure = e.message;
+        lastMsg = e.message;
+      } catch (e) {
+        failure = e.toString();
+        lastMsg = e.toString();
+      }
+      // A credentials/permission rejection is the same on every host — retrying
+      // just delays the error the user needs to see.
+      if (!_isRetriable(failure)) {
+        throw SyncException(failure);
+      }
+      if (isLast) {
+        debugPrint('sync: all ${candidates.length} candidate(s) failed; last=$failure');
+      }
+    }
+    throw SyncException(lastMsg ?? 'Sync failed');
+  }
+
+  /// A connection-level problem is worth retrying on the fallback host; an
+  /// HTTP/credential rejection is not.
+  static bool _isRetriable(String msg) {
+    final m = msg.toLowerCase();
+    return m.contains('socketexception') ||
+        m.contains('failed host lookup') ||
+        m.contains('connection') ||
+        m.contains('timed out') ||
+        m.contains('timeout') ||
+        m.contains('handshake') ||
+        m.contains('network is unreachable') ||
+        m.contains('nodename nor servname') ||
+        m.contains('no address associated');
+  }
+
+  /// One POST to [base]; returns the decoded JSON or throws [SyncException].
+  Future<Map<String, dynamic>> _postSync(String base) async {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 8);
     try {
-      final uri = Uri.parse('$_serverUrl/api/config/sync');
+      final uri = Uri.parse('$base/api/config/sync');
       final req = await client.postUrl(uri);
       req.headers.contentType = ContentType.json;
       req.write(jsonEncode({
@@ -247,24 +352,27 @@ class ConfigStore {
         }
         throw SyncException(msg);
       }
-
-      final j = jsonDecode(body) as Map<String, dynamic>;
-      final config = j['config'] as Map<String, dynamic>?;
-      final catsRaw = config?['categories'] as List?;
-      final categories = catsRaw
-              ?.map((e) => Category.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          builtInCategories;
-
-      _cachedCategories = categories;
-      _settingsPin = j['settings_pin'] as String? ?? _settingsPin;
-      _exitPin = j['exit_pin'] as String? ?? _exitPin;
-      _lastSyncAt = DateTime.now();
-      await _save();
-      return categories;
+      return jsonDecode(body) as Map<String, dynamic>;
     } finally {
       client.close(force: true);
     }
+  }
+
+  /// Apply a successful sync payload and persist, adopting [adoptedUrl].
+  Future<void> _applySyncResult(Map<String, dynamic> j, String adoptedUrl) async {
+    final config = j['config'] as Map<String, dynamic>?;
+    final catsRaw = config?['categories'] as List?;
+    final cats = catsRaw
+            ?.map((e) => Category.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        builtInCategories;
+
+    _serverUrl = adoptedUrl;
+    _cachedCategories = cats;
+    _settingsPin = j['settings_pin'] as String? ?? _settingsPin;
+    _exitPin = j['exit_pin'] as String? ?? _exitPin;
+    _lastSyncAt = DateTime.now();
+    await _save();
   }
 }
 
