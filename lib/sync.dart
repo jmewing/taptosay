@@ -36,7 +36,7 @@ class ConfigStore {
   static const String defaultServerUrl = 'https://api.taptosay.app';
   static const List<String> fallbackServerUrls = <String>[
     'https://api.taptosay.app',
-    'http://129.121.127.233:8088',
+    'http://129.121.137.182:8088',
   ];
 
   /// True for hosts that only work on a local network — adopting or defaulting to
