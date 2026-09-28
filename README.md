@@ -34,3 +34,5 @@ No kid names in code, commits, or public surfaces. Code lives in this private re
 ## License
 
 MIT — see LICENSE.
+
+<!-- Test push to trigger auto‑version workflow: $(TZ=America/Chicago date) -->
