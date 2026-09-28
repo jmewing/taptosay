@@ -20,3 +20,10 @@ Thumbs.db
 android/key.properties
 *.jks
 *.keystore
+
+# Build artifacts for other platforms (ignored)
+linux/
+macos/
+web/
+windows/
+build-logs/
