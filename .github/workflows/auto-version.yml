@@ -53,6 +53,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Stage the VERSION and pubspec.yaml files for commit.
           git add VERSION pubspec.yaml
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.next }} [skip version]"
-          git push origin ${{ github.ref }}
+          # Try to commit; if nothing changed (e.g., version already up‑to‑date), continue.
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.next }} [skip version]" || echo "No version changes to commit"
+          # Push the commit; if the remote is already up‑to‑date, ignore the error.
+          git push origin ${{ github.ref }} || echo "Push skipped – remote already has latest version"
