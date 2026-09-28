@@ -20,7 +20,7 @@ class _ProvisionScreenState extends State<ProvisionScreen> {
   late final _student = TextEditingController(text: ConfigStore.instance.studentId ?? '');
   late final _auth = TextEditingController(text: ConfigStore.instance.authPassword ?? '');
   late final _url = TextEditingController(
-    text: ConfigStore.instance.serverUrl ?? 'http://192.168.12.5:8088',
+    text: ConfigStore.instance.serverUrl ?? ConfigStore.defaultServerUrl,
   );
 
   bool _busy = false;
@@ -127,7 +127,7 @@ class _ProvisionScreenState extends State<ProvisionScreen> {
                     keyboardType: TextInputType.url,
                     decoration: const InputDecoration(
                       labelText: 'Server URL',
-                      hintText: 'http://192.168.12.5:8088',
+                      hintText: 'https://api.taptosay.app',
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) {

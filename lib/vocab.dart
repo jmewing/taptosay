@@ -16,17 +16,22 @@ Color colorFromHex(String? hex) {
 /// One phrase/word with a big display glyph. The unit of speech.
 class Saying {
   final String label; // spoken text
-  final String emoji; // shown on the white badge (emoji, letter, or number)
+  final String emoji; // shown on the white badge (emoji, letter, or number) — fallback
+  final String? symbol; // Mulberry AAC symbol key (served as PNG) — overrides emoji
+  final int? mediaId; // uploaded custom photo id — overrides emoji
   final Color color;
   final List<Saying>? sub; // drill-down tiles (e.g. decade 20 -> 20..29)
   final String? subTitle; // label for the drill-down screen
-  const Saying(this.label, this.emoji, this.color, {this.sub, this.subTitle});
+  const Saying(this.label, this.emoji, this.color,
+      {this.symbol, this.mediaId, this.sub, this.subTitle});
 
   factory Saying.fromJson(Map<String, dynamic> j) {
     return Saying(
       j['label'] as String? ?? '',
       j['emoji'] as String? ?? '',
-      colorFromHex(j['color'] as String?),
+      colorFromHex(j['color'] as String?), 
+      symbol: j['symbol'] as String?,
+      mediaId: _intOrNull(j['media_id']),
       sub: (j['sub'] as List?)
           ?.map((e) => Saying.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -39,9 +44,12 @@ class Saying {
 class Category {
   final String name;
   final String emoji;
+  final String? symbol;
+  final int? mediaId;
   final Color color;
   final List<Saying> sayings;
-  const Category(this.name, this.emoji, this.color, this.sayings);
+  const Category(this.name, this.emoji, this.color, this.sayings,
+      {this.symbol, this.mediaId});
 
   factory Category.fromJson(Map<String, dynamic> j) {
     return Category(
@@ -52,9 +60,20 @@ class Category {
               ?.map((e) => Saying.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      symbol: j['symbol'] as String?,
+      mediaId: _intOrNull(j['media_id']),
     );
   }
 }
+
+int? _intOrNull(dynamic v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  final s = v.toString().trim();
+  return s.isEmpty ? null : int.tryParse(s.replaceAll(RegExp(r'\D'), ''));
+}
+
 
 /* ------------------------------------------------------------------ */
 /*  Shared color palette for generated tiles                          */

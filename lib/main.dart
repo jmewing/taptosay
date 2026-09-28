@@ -73,11 +73,32 @@ class _CategoryHomeState extends State<CategoryHome> {
   Future<void> _syncOnLaunch() async {
     try {
       await ConfigStore.instance.load();
+      // If the tablet was provisioned via QR/NFC, the admin-extras bundle has
+      // already been persisted natively; apply it so the app auto-connects
+      // without the first-run hand-typing of credentials.
+      if (!ConfigStore.instance.isProvisioned) {
+        await _applyProvisioningExtras();
+      }
       if (!ConfigStore.instance.isProvisioned) return;
       await ConfigStore.instance.sync();
       if (mounted) setState(() {});
     } catch (_) {
       // offline or credentials changed — keep the cache / built-ins
+    }
+  }
+
+  /// Read the device-owner provisioning extras from the native side and apply
+  /// them (server_url, student_id, school_tea_id, auth_password).
+  Future<void> _applyProvisioningExtras() async {
+    const channel = MethodChannel('com.jmewing.taptosay/kiosk');
+    try {
+      final extras = await channel.invokeMethod<Map<dynamic, dynamic>>('getProvisioningExtras');
+      if (extras == null || extras.isEmpty) return;
+      final map = extras.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''));
+      await ConfigStore.instance.applyProvisioningExtras(map);
+      if (mounted) setState(() {});
+    } catch (_) {
+      // no extras — remain on the first-run provision screen
     }
   }
 
@@ -347,6 +368,8 @@ class _CategoryTile extends StatelessWidget {
             category: category.name,
             label: category.name,
             emoji: category.emoji,
+            symbolUrl: ConfigStore.instance.symbolUrl(category.symbol),
+            mediaUrl: ConfigStore.instance.mediaUrl(category.mediaId),
             color: category.color,
             labelFontSize: 20,
             badgeSize: 96,
@@ -467,6 +490,8 @@ class _WordTile extends StatelessWidget {
             category: category,
             label: saying.label,
             emoji: saying.emoji,
+            symbolUrl: ConfigStore.instance.symbolUrl(saying.symbol),
+            mediaUrl: ConfigStore.instance.mediaUrl(saying.mediaId),
             color: saying.color,
             labelFontSize: 22,
             badgeSize: 96,
