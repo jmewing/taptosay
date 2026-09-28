@@ -28,7 +28,8 @@ jobs:
         run: |
           CURRENT=$(cat VERSION 2>/dev/null || echo "0")
           IFS='.' read -r YEAR MONTH DAY COUNTER <<< "$CURRENT"
-          TODAY=$(date -u +"%Y.%m.%d")
+          # Use the America/Chicago timezone for version dates (as requested).
+          TZ=America/Chicago TODAY=$(date +"%Y.%m.%d")
           if [[ "$YEAR.$MONTH.$DAY" == "$TODAY" ]]; then
             COUNTER=$((COUNTER + 1))
           else
