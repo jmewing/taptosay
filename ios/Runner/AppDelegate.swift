@@ -12,5 +12,38 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    // Mirror the Android platform channel so the shared Dart code works unchanged.
+    //
+    // Android implements a real device-owner kiosk here (lock task, persistent
+    // HOME, keyguard off) plus QR/NFC provisioning extras. iOS deliberately does
+    // NOT: Guided Access already covers single-app lock, so per the product
+    // decision (2026-09-29) the handler stays a well-defined no-op rather than a
+    // half-built lock that could trap a child in the app.
+    //
+    // Contract (must match MainActivity.kt so the two OSes behave identically):
+    //   getProvisioningExtras -> empty map  (no device-owner flow on iOS)
+    //   stopLockTask          -> false      (nothing was locked; exit is manual)
+    //   goHome                -> false      (Guided Access is ended by the adult)
+    //   startLockTask         -> false      (use Guided Access instead)
+    guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "TapToSayKiosk") else {
+      return
+    }
+    let channel = FlutterMethodChannel(
+      name: "com.jmewing.taptosay/kiosk",
+      binaryMessenger: registrar.messenger()
+    )
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getProvisioningExtras":
+        // No QR/NFC provisioning on iOS — hand back an empty map so the caller
+        // simply stays on the first-run provisioning screen.
+        result([String: String]())
+      case "stopLockTask", "goHome", "startLockTask":
+        result(false)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 }
