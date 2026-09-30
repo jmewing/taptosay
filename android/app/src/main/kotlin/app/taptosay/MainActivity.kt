@@ -1,4 +1,4 @@
-package com.jmewing.taptosay
+package app.taptosay
 
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -108,7 +108,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.jmewing.taptosay/kiosk")
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "app.taptosay/kiosk")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "stopLockTask" -> {

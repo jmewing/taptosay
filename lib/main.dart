@@ -90,7 +90,7 @@ class _CategoryHomeState extends State<CategoryHome> {
   /// Read the device-owner provisioning extras from the native side and apply
   /// them (server_url, student_id, school_tea_id, auth_password).
   Future<void> _applyProvisioningExtras() async {
-    const channel = MethodChannel('com.jmewing.taptosay/kiosk');
+    const channel = MethodChannel('app.taptosay/kiosk');
     try {
       final extras = await channel.invokeMethod<Map<dynamic, dynamic>>('getProvisioningExtras');
       if (extras == null || extras.isEmpty) return;
@@ -166,7 +166,7 @@ class _CategoryHomeState extends State<CategoryHome> {
 
   /// Unlock kiosk mode and drop to the normal launcher.
   Future<void> _exitKiosk() async {
-    const channel = MethodChannel('com.jmewing.taptosay/kiosk');
+    const channel = MethodChannel('app.taptosay/kiosk');
     try {
       await channel.invokeMethod('stopLockTask');
     } catch (_) {

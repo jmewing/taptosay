@@ -1,4 +1,4 @@
-package com.jmewing.taptosay
+package app.taptosay
 
 import android.content.Context
 import android.content.Intent
@@ -15,7 +15,7 @@ import java.util.Locale
  * Persistent, shell-readable instrumentation for diagnosing device-owner
  * provisioning. The app is a release (non-debuggable) device-owner build, so
  * `run-as` can't read its data dir; writing to external app storage
- * (/sdcard/Android/data/com.jmewing.taptosay/files/provisioning.log) lets an
+ * (/sdcard/Android/data/app.taptosay/files/provisioning.log) lets an
  * ADB shell read it after a factory reset without root.
  *
  * Goal: decide whether Android/clouddpc EVER delivers the QR admin-extras to

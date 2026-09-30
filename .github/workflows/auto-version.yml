@@ -1,16 +1,45 @@
-name: Auto version bump
+name: Version
 
-# Trigger on every push to any branch (including release branches).
-# Adjust if you only want main.
-# We'll keep it simple to match Offgrid‑Sentinel.
+# SINGLE SOURCE OF TRUTH for the app version is pubspec.yaml's `version:` line.
+#
+#   version: 1.0.0+1
+#     -> Android  versionName 1.0.0 / versionCode 1
+#     -> iOS      CFBundleShortVersionString 1.0.0 / CFBundleVersion 1
+#
+# Flutter reads that one line and stamps BOTH platforms at build time, so the
+# two stores always receive the same version. Do not duplicate the version
+# anywhere else.
+#
+# WHY THIS FILE CHANGED (2026-09-30):
+#   The old workflow rewrote pubspec.yaml to a DATE-based version
+#   (YYYY.MM.DD.counter) on EVERY push. That clobbered deliberate release
+#   versions (turning 1.0.0 into 2026.09.30.0) and left the built artifacts out
+#   of sync with the repo — the shipped AAB was 1.0.3/2013 while pubspec said
+#   0.0.0+0. That mismatch is the bug this workflow now avoids: it never
+#   overwrites the version by date.
+#
+# HOW TO RELEASE NOW:
+#   1. Edit `version:` in pubspec.yaml by hand when you ship a real release
+#      (e.g. 1.0.0+1 -> 1.0.1+2). Bump the build number on every Play upload —
+#      Play rejects a duplicate versionCode.
+#   2. Or put `[version bump]` in a commit message to auto-increment the build
+#      counter only (1.0.0+1 -> 1.0.0+2), keeping the name.
+#
+# Runs on main only, and only when asked. Otherwise it is a no-op.
+
 on:
   push:
-    branches: [ '**' ]
+    branches: [ 'main' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  bump-version:
+  version:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip version]')"
+    # Only act on an explicit request. A normal push is a no-op.
+    if: "github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[version bump]')"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,40 +52,33 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Determine next version
+      - name: Bump build counter
         id: bump
         run: |
-          CURRENT=$(cat VERSION 2>/dev/null || echo "0")
-          IFS='.' read -r YEAR MONTH DAY COUNTER <<< "$CURRENT"
-          # Use the America/Chicago timezone for version dates (as requested).
-          TZ=America/Chicago TODAY=$(date +"%Y.%m.%d")
-          if [[ "$YEAR.$MONTH.$DAY" == "$TODAY" ]]; then
-            COUNTER=$((COUNTER + 1))
-          else
-            COUNTER=0
+          set -euo pipefail
+          VERSION_LINE=$(grep -E '^version:' pubspec.yaml | head -1 | awk '{print $2}')
+          NAME="${VERSION_LINE%%+*}"
+          BUILD="${VERSION_LINE##*+}"
+          if [[ "$BUILD" == "$VERSION_LINE" || -z "$BUILD" ]]; then
+            BUILD=0
           fi
-          NEXT="$TODAY.$COUNTER"
-          echo "next=$NEXT" >> $GITHUB_OUTPUT
-          echo "Next version: $NEXT"
+          NEW="${NAME}+$((BUILD + 1))"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          sed -i -E "s/^version: .*/version: ${NEW}/" pubspec.yaml
+          # Keep the informational VERSION file in step with pubspec (not used by builds).
+          echo "${NEW}" > VERSION
+          echo "Version: $VERSION_LINE -> ${NEW}"
 
-      - name: Update VERSION file
+      - name: Commit and push
         run: |
-          echo "${{ steps.bump.outputs.next }}" > VERSION
+          git add pubspec.yaml VERSION
+          git commit -m "chore: version ${{ steps.bump.outputs.new }} [skip version]" \
+            || echo "No version change to commit"
+          git push || echo "Push skipped - remote already current"
 
-      - name: Update pubspec.yaml version
+      - name: Sanity check - Android and iOS names stay in lockstep
         run: |
-          NEW="${{ steps.bump.outputs.next }}"
-          # Set Flutter version (major.minor.patch) to date components; build number to counter.
-          # Using full date as version string.
-          sed -i.bak -E "s/^version: .*/version: $NEW+0/" pubspec.yaml
-
-      - name: Commit and push version bump
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Stage the VERSION and pubspec.yaml files for commit.
-          git add VERSION pubspec.yaml
-          # Try to commit; if nothing changed (e.g., version already up‑to‑date), continue.
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.next }} [skip version]" || echo "No version changes to commit"
-          # Push the commit; if the remote is already up‑to‑date, ignore the error.
-          git push origin ${{ github.ref }} || echo "Push skipped – remote already has latest version"
+          # Both platforms derive from pubspec, so a mismatch means something
+          # has hard-coded a version outside pubspec. Fail loudly if so.
+          NAME=$(grep -E '^version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d+ -f1)
+          echo "App version name is $NAME for BOTH Android and iOS."

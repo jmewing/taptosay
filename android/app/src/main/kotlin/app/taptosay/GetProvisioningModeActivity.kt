@@ -1,4 +1,4 @@
-package com.jmewing.taptosay
+package app.taptosay
 
 import android.app.Activity
 import android.app.admin.DevicePolicyManager

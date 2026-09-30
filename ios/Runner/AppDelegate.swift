@@ -30,7 +30,7 @@ import UIKit
       return
     }
     let channel = FlutterMethodChannel(
-      name: "com.jmewing.taptosay/kiosk",
+      name: "app.taptosay/kiosk",
       binaryMessenger: registrar.messenger()
     )
     channel.setMethodCallHandler { call, result in
