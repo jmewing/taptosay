@@ -187,6 +187,12 @@ class _CategoryHomeState extends State<CategoryHome> {
       appBar: AppBar(
         toolbarHeight: 44,
         centerTitle: true,
+        // Classroom mode: a student switcher at the top-left. Single-student
+        // tablets never see it (isClassroom is false -> leading stays null).
+        leadingWidth: ConfigStore.instance.isClassroom ? 250 : null,
+        leading: ConfigStore.instance.isClassroom
+            ? _StudentSwitcher(onChanged: () => setState(() {}))
+            : null,
         title: const Text(
           'Tap To Say',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -340,6 +346,51 @@ class _CategoryHomeState extends State<CategoryHome> {
           },
         );
       },
+    );
+  }
+}
+
+class _StudentSwitcher extends StatelessWidget {
+  final VoidCallback onChanged;
+  const _StudentSwitcher({required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = ConfigStore.instance;
+    final students = store.classroomStudents;
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: store.selectedStudentId,
+          isExpanded: true,
+          iconEnabledColor: Colors.white,
+          dropdownColor: const Color(0xFF00695C),
+          style: const TextStyle(
+              color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+          items: <DropdownMenuItem<String?>>[
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('--Select Student--',
+                  style: TextStyle(color: Colors.white)),
+            ),
+            for (final s in students)
+              DropdownMenuItem<String?>(
+                value: s.studentId,
+                child: Text(
+                  s.label,
+                  style: const TextStyle(color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (id) {
+            // Roster is already cached — switching is local, no network call.
+            store.selectStudent(id);
+            onChanged();
+          },
+        ),
+      ),
     );
   }
 }

@@ -63,6 +63,12 @@ class ConfigStore {
   String? _exitPin;
   DateTime? _lastSyncAt;
 
+  // Classroom mode: set when this tablet was provisioned with a `C…` code and
+  // the sync payload carried a student roster. Null for single-student tablets.
+  List<ClassroomStudent>? _classroomStudents;
+  String? _classroomName;
+  String? _selectedStudentId;
+
   Future<Directory> _dir() async {
     if (_root != null) return _root!;
     Directory d;
@@ -101,6 +107,14 @@ class ConfigStore {
         _exitPin = j['exit_pin'] as String?;
         final raw = j['last_sync_at'] as String?;
         _lastSyncAt = raw == null ? null : DateTime.tryParse(raw);
+        _classroomName = j['classroom_name'] as String?;
+        final studentsRaw = j['classroom_students'] as List?;
+        if (studentsRaw != null) {
+          _classroomStudents = [
+            for (final e in studentsRaw)
+              if (e is Map<String, dynamic>) _classroomStudentFromJson(e)
+          ];
+        }
         final cats = j['categories'] as List?;
         if (cats != null) {
           _cachedCategories = cats
@@ -144,8 +158,55 @@ class ConfigStore {
   String get settingsPin => _settingsPin ?? '';
   String get exitPin => _exitPin ?? '';
 
-  /// Categories: cached, else built-in fallback.
-  List<Category> get categories => _cachedCategories ?? builtInCategories;
+  /// True when this tablet was provisioned with a classroom code (`C…`): the
+  /// sync payload carried a `students` roster, so the UI shows a switcher.
+  bool get isClassroom => _classroomStudents != null;
+
+  List<ClassroomStudent> get classroomStudents =>
+      _classroomStudents ?? const <ClassroomStudent>[];
+
+  String? get classroomName => _classroomName;
+
+  String? get selectedStudentId => _selectedStudentId;
+
+  ClassroomStudent? get selectedStudent {
+    final list = _classroomStudents;
+    if (list == null || _selectedStudentId == null) return null;
+    for (final s in list) {
+      if (s.studentId == _selectedStudentId) return s;
+    }
+    return null;
+  }
+
+  /// Switch the visible board to one student (or null for `--Select Student--`).
+  /// Purely local — the roster is already cached, so this never hits the network.
+  void selectStudent(String? studentId) {
+    _selectedStudentId = studentId;
+    revision.value++;
+  }
+
+  /// Categories for the current view: the selected student's board in classroom
+  /// mode, otherwise this tablet's own cached config (else built-in fallback).
+  List<Category> get categories {
+    final sel = selectedStudent;
+    if (sel != null) return sel.categories;
+    return _cachedCategories ?? builtInCategories;
+  }
+
+  /// Build one roster entry from the sync payload or the on-device cache.
+  ClassroomStudent _classroomStudentFromJson(Map<String, dynamic> j) {
+    final cfg = j['config'] as Map<String, dynamic>?;
+    final catsRaw = cfg?['categories'] as List?;
+    final cats = catsRaw
+            ?.map((e) => Category.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        builtInCategories;
+    return ClassroomStudent(
+      (j['student_id'] ?? '').toString(),
+      j['display_name'] as String?,
+      cats,
+    );
+  }
 
   DateTime? get lastSyncAt => _lastSyncAt;
 
@@ -216,6 +277,40 @@ class ConfigStore {
     return s;
   }
 
+  /// Serialize a category list back into the config.json shape.
+  List<Map<String, dynamic>> _catsToJson(List<Category> cats) => [
+        for (final c in cats)
+          {
+            'name': c.name,
+            'emoji': c.emoji,
+            if (c.symbol != null) 'symbol': c.symbol,
+            if (c.mediaId != null) 'media_id': c.mediaId,
+            'color': '#${c.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+            'sayings': [
+              for (final s in c.sayings)
+                {
+                  'label': s.label,
+                  'emoji': s.emoji,
+                  if (s.symbol != null) 'symbol': s.symbol,
+                  if (s.mediaId != null) 'media_id': s.mediaId,
+                  'color': '#${s.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+                  if (s.subTitle != null) 'subTitle': s.subTitle,
+                  if (s.sub != null)
+                    'sub': [
+                      for (final d in s.sub!)
+                        {
+                          'label': d.label,
+                          'emoji': d.emoji,
+                          if (d.symbol != null) 'symbol': d.symbol,
+                          if (d.mediaId != null) 'media_id': d.mediaId,
+                          'color': '#${d.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+                        }
+                    ],
+                }
+            ],
+          }
+      ];
+
   Future<void> _save() async {
     final d = await _dir();
     _cfgFile(d).writeAsStringSync(
@@ -227,40 +322,18 @@ class ConfigStore {
         'settings_pin': _settingsPin,
         'exit_pin': _exitPin,
         'last_sync_at': _lastSyncAt?.toIso8601String(),
-        'categories': _cachedCategories == null
-            ? null
-            : [
-                for (final c in _cachedCategories!)
-                  {
-                    'name': c.name,
-                    'emoji': c.emoji,
-                    if (c.symbol != null) 'symbol': c.symbol,
-                    if (c.mediaId != null) 'media_id': c.mediaId,
-                    'color': '#${c.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
-                    'sayings': [
-                      for (final s in c.sayings)
-                        {
-                          'label': s.label,
-                          'emoji': s.emoji,
-                          if (s.symbol != null) 'symbol': s.symbol,
-                          if (s.mediaId != null) 'media_id': s.mediaId,
-                          'color': '#${s.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
-                          if (s.subTitle != null) 'subTitle': s.subTitle,
-                          if (s.sub != null)
-                            'sub': [
-                              for (final d in s.sub!)
-                                {
-                                  'label': d.label,
-                                  'emoji': d.emoji,
-                                  if (d.symbol != null) 'symbol': d.symbol,
-                                  if (d.mediaId != null) 'media_id': d.mediaId,
-                                  'color': '#${d.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
-                                }
-                            ],
-                        }
-                    ],
-                  }
-              ],
+        'categories':
+            _cachedCategories == null ? null : _catsToJson(_cachedCategories!),
+        if (_classroomStudents != null) 'classroom_name': _classroomName,
+        if (_classroomStudents != null)
+          'classroom_students': [
+            for (final s in _classroomStudents!)
+              {
+                'student_id': s.studentId,
+                'display_name': s.displayName,
+                'config': {'categories': _catsToJson(s.categories)},
+              }
+          ],
       }),
     );
     revision.value++;
@@ -367,6 +440,22 @@ class ConfigStore {
             .toList() ??
         builtInCategories;
 
+    // Classroom vs single-student. Absence of `kind` (or 'student') keeps the
+    // original single-student behaviour exactly.
+    if ((j['kind'] as String?) == 'classroom') {
+      _classroomName = j['display_name'] as String?;
+      final raw = (j['students'] as List?) ?? const [];
+      _classroomStudents = [
+        for (final e in raw)
+          if (e is Map<String, dynamic>) _classroomStudentFromJson(e)
+      ];
+      _selectedStudentId = null; // always start on --Select Student--
+    } else {
+      _classroomStudents = null;
+      _classroomName = null;
+      _selectedStudentId = null;
+    }
+
     _serverUrl = adoptedUrl;
     _cachedCategories = cats;
     _settingsPin = j['settings_pin'] as String? ?? _settingsPin;
@@ -374,6 +463,19 @@ class ConfigStore {
     _lastSyncAt = DateTime.now();
     await _save();
   }
+}
+
+/// One student in a classroom bundle (from the sync response, or the cache).
+class ClassroomStudent {
+  final String studentId;
+  final String? displayName;
+  final List<Category> categories;
+  const ClassroomStudent(this.studentId, this.displayName, this.categories);
+
+  /// Label for the switcher: the human name when set, else the district ID.
+  String get label => (displayName != null && displayName!.trim().isNotEmpty)
+      ? displayName!.trim()
+      : studentId;
 }
 
 class SyncException implements Exception {
