@@ -63,11 +63,18 @@ class ConfigStore {
   String? _exitPin;
   DateTime? _lastSyncAt;
 
-  // Classroom mode: set when this tablet was provisioned with a `C…` code and
-  // the sync payload carried a student roster. Null for single-student tablets.
+  // Classroom mode: set when provisioned with a `C…` code whose sync payload
+  // carried a student roster. Null for single-student tablets.
   List<ClassroomStudent>? _classroomStudents;
   String? _classroomName;
   String? _selectedStudentId;
+
+  // Teacher mode: set when provisioned with a `T…` code. The payload carries
+  // EVERY classroom assigned to the teacher, each with its own roster, so the
+  // UI shows two dropdowns (classroom, then student).
+  List<Classroom>? _classrooms;
+  String? _teacherName;
+  String? _selectedClassroomId;
 
   Future<Directory> _dir() async {
     if (_root != null) return _root!;
@@ -115,6 +122,15 @@ class ConfigStore {
               if (e is Map<String, dynamic>) _classroomStudentFromJson(e)
           ];
         }
+        _teacherName = j['teacher_name'] as String?;
+        final classroomsRaw = j['classrooms'] as List?;
+        if (classroomsRaw != null) {
+          _classrooms = [
+            for (final e in classroomsRaw)
+              if (e is Map<String, dynamic>) _classroomFromJson(e)
+          ];
+        }
+        _selectedClassroomId = j['selected_classroom_id'] as String?;
         final cats = j['categories'] as List?;
         if (cats != null) {
           _cachedCategories = cats
@@ -158,24 +174,58 @@ class ConfigStore {
   String get settingsPin => _settingsPin ?? '';
   String get exitPin => _exitPin ?? '';
 
-  /// True when this tablet was provisioned with a classroom code (`C…`): the
-  /// sync payload carried a `students` roster, so the UI shows a switcher.
+  /// True when provisioned with a classroom code (`C…`).
   bool get isClassroom => _classroomStudents != null;
 
-  List<ClassroomStudent> get classroomStudents =>
-      _classroomStudents ?? const <ClassroomStudent>[];
+  /// True when provisioned with a teacher code (`T…`).
+  bool get isTeacher => _classrooms != null;
 
-  String? get classroomName => _classroomName;
+  /// True when any roster-aware mode is active (single classroom or teacher).
+  bool get hasRoster => isClassroom || isTeacher;
+
+  List<ClassroomStudent> get classroomStudents => currentStudents;
+
+  /// Students in the current view: the selected classroom's roster in teacher
+  /// mode, this classroom's roster otherwise.
+  List<ClassroomStudent> get currentStudents {
+    if (isTeacher) return selectedClassroom?.students ?? const <ClassroomStudent>[];
+    return _classroomStudents ?? const <ClassroomStudent>[];
+  }
+
+  String? get classroomName =>
+      isTeacher ? (selectedClassroom?.displayName ?? _teacherName) : _classroomName;
+
+  String? get teacherName => _teacherName;
+
+  List<Classroom> get classrooms => _classrooms ?? const <Classroom>[];
+
+  String? get selectedClassroomId => _selectedClassroomId;
+
+  Classroom? get selectedClassroom {
+    final list = _classrooms;
+    if (list == null || _selectedClassroomId == null) return null;
+    for (final c in list) {
+      if (c.classroomId == _selectedClassroomId) return c;
+    }
+    return null;
+  }
 
   String? get selectedStudentId => _selectedStudentId;
 
   ClassroomStudent? get selectedStudent {
-    final list = _classroomStudents;
-    if (list == null || _selectedStudentId == null) return null;
-    for (final s in list) {
+    if (_selectedStudentId == null) return null;
+    for (final s in currentStudents) {
       if (s.studentId == _selectedStudentId) return s;
     }
     return null;
+  }
+
+  /// Teacher mode: pick a classroom (resets the student to `--Select Student--`).
+  /// Purely local — the bundle is already cached.
+  void selectClassroom(String? classroomId) {
+    _selectedClassroomId = classroomId;
+    _selectedStudentId = null;
+    revision.value++;
   }
 
   /// Switch the visible board to one student (or null for `--Select Student--`).
@@ -185,11 +235,16 @@ class ConfigStore {
     revision.value++;
   }
 
-  /// Categories for the current view: the selected student's board in classroom
-  /// mode, otherwise this tablet's own cached config (else built-in fallback).
+  /// Categories for the current view: the selected student's board, else the
+  /// selected classroom's default board (teacher mode), else this tablet's own
+  /// cached config (else the built-in fallback).
   List<Category> get categories {
     final sel = selectedStudent;
     if (sel != null) return sel.categories;
+    if (isTeacher) {
+      final c = selectedClassroom;
+      if (c != null) return c.categories;
+    }
     return _cachedCategories ?? builtInCategories;
   }
 
@@ -205,6 +260,26 @@ class ConfigStore {
       (j['student_id'] ?? '').toString(),
       j['display_name'] as String?,
       cats,
+    );
+  }
+
+  /// Build one classroom (with its roster) from the sync payload or cache.
+  Classroom _classroomFromJson(Map<String, dynamic> j) {
+    final cfg = j['config'] as Map<String, dynamic>?;
+    final catsRaw = cfg?['categories'] as List?;
+    final cats = catsRaw
+            ?.map((e) => Category.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        builtInCategories;
+    final studentsRaw = (j['students'] as List?) ?? const [];
+    return Classroom(
+      (j['classroom_id'] ?? '').toString(),
+      j['display_name'] as String?,
+      cats,
+      [
+        for (final e in studentsRaw)
+          if (e is Map<String, dynamic>) _classroomStudentFromJson(e)
+      ],
     );
   }
 
@@ -334,6 +409,25 @@ class ConfigStore {
                 'config': {'categories': _catsToJson(s.categories)},
               }
           ],
+        if (_classrooms != null) 'teacher_name': _teacherName,
+        if (_classrooms != null) 'selected_classroom_id': _selectedClassroomId,
+        if (_classrooms != null)
+          'classrooms': [
+            for (final c in _classrooms!)
+              {
+                'classroom_id': c.classroomId,
+                'display_name': c.displayName,
+                'config': {'categories': _catsToJson(c.categories)},
+                'students': [
+                  for (final s in c.students)
+                    {
+                      'student_id': s.studentId,
+                      'display_name': s.displayName,
+                      'config': {'categories': _catsToJson(s.categories)},
+                    }
+                ],
+              }
+          ],
       }),
     );
     revision.value++;
@@ -440,9 +534,19 @@ class ConfigStore {
             .toList() ??
         builtInCategories;
 
-    // Classroom vs single-student. Absence of `kind` (or 'student') keeps the
-    // original single-student behaviour exactly.
-    if ((j['kind'] as String?) == 'classroom') {
+    // Teacher vs classroom vs single-student.
+    if ((j['kind'] as String?) == 'teacher') {
+      _teacherName = j['display_name'] as String?;
+      final raw = (j['classrooms'] as List?) ?? const [];
+      _classrooms = [
+        for (final e in raw)
+          if (e is Map<String, dynamic>) _classroomFromJson(e)
+      ];
+      _selectedClassroomId = null; // always start on --Select Classroom--
+      _selectedStudentId = null;
+      _classroomStudents = null;
+      _classroomName = null;
+    } else if ((j['kind'] as String?) == 'classroom') {
       _classroomName = j['display_name'] as String?;
       final raw = (j['students'] as List?) ?? const [];
       _classroomStudents = [
@@ -450,10 +554,16 @@ class ConfigStore {
           if (e is Map<String, dynamic>) _classroomStudentFromJson(e)
       ];
       _selectedStudentId = null; // always start on --Select Student--
+      _classrooms = null;
+      _teacherName = null;
+      _selectedClassroomId = null;
     } else {
       _classroomStudents = null;
       _classroomName = null;
       _selectedStudentId = null;
+      _classrooms = null;
+      _teacherName = null;
+      _selectedClassroomId = null;
     }
 
     _serverUrl = adoptedUrl;
@@ -483,4 +593,19 @@ class SyncException implements Exception {
   const SyncException(this.message);
   @override
   String toString() => message;
+}
+
+/// One classroom in a teacher bundle: a code, a friendly name, its own default
+/// board, and its roster of students.
+class Classroom {
+  final String classroomId;
+  final String? displayName;
+  final List<Category> categories;
+  final List<ClassroomStudent> students;
+  const Classroom(this.classroomId, this.displayName, this.categories,
+      this.students);
+
+  String get label => (displayName != null && displayName!.trim().isNotEmpty)
+      ? displayName!.trim()
+      : classroomId;
 }

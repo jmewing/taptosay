@@ -187,11 +187,13 @@ class _CategoryHomeState extends State<CategoryHome> {
       appBar: AppBar(
         toolbarHeight: 44,
         centerTitle: true,
-        // Classroom mode: a student switcher at the top-left. Single-student
-        // tablets never see it (isClassroom is false -> leading stays null).
-        leadingWidth: ConfigStore.instance.isClassroom ? 250 : null,
-        leading: ConfigStore.instance.isClassroom
-            ? _StudentSwitcher(onChanged: () => setState(() {}))
+        // Roster mode: two dropdowns for a teacher tablet (classroom + student),
+        // one for a classroom tablet. Single-student tablets show no switcher.
+        leadingWidth: ConfigStore.instance.isTeacher
+            ? 470
+            : (ConfigStore.instance.isClassroom ? 250 : null),
+        leading: ConfigStore.instance.hasRoster
+            ? _RosterSwitcher(onChanged: () => setState(() {}))
             : null,
         title: const Text(
           'Tap To Say',
@@ -350,14 +352,35 @@ class _CategoryHomeState extends State<CategoryHome> {
   }
 }
 
-class _StudentSwitcher extends StatelessWidget {
+class _RosterSwitcher extends StatelessWidget {
   final VoidCallback onChanged;
-  const _StudentSwitcher({required this.onChanged});
+  const _RosterSwitcher({required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     final store = ConfigStore.instance;
-    final students = store.classroomStudents;
+    // Teacher tableaus get two dropdowns; classroom tablets just the roster.
+    if (store.isTeacher) {
+      return Row(
+        children: [
+          Expanded(child: _ClassroomDropdown(onChanged: onChanged)),
+          const SizedBox(width: 2),
+          Expanded(child: _StudentDropdown(onChanged: onChanged)),
+        ],
+      );
+    }
+    return _StudentDropdown(onChanged: onChanged);
+  }
+}
+
+class _StudentDropdown extends StatelessWidget {
+  final VoidCallback onChanged;
+  const _StudentDropdown({required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = ConfigStore.instance;
+    final students = store.currentStudents;
     return Padding(
       padding: const EdgeInsets.only(left: 8),
       child: DropdownButtonHideUnderline(
@@ -387,6 +410,50 @@ class _StudentSwitcher extends StatelessWidget {
           onChanged: (id) {
             // Roster is already cached — switching is local, no network call.
             store.selectStudent(id);
+            onChanged();
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ClassroomDropdown extends StatelessWidget {
+  final VoidCallback onChanged;
+  const _ClassroomDropdown({required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = ConfigStore.instance;
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: store.selectedClassroomId,
+          isExpanded: true,
+          iconEnabledColor: Colors.white,
+          dropdownColor: const Color(0xFF00695C),
+          style: const TextStyle(
+              color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+          items: <DropdownMenuItem<String?>>[
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('--Select Class--',
+                  style: TextStyle(color: Colors.white)),
+            ),
+            for (final c in store.classrooms)
+              DropdownMenuItem<String?>(
+                value: c.classroomId,
+                child: Text(
+                  c.label,
+                  style: const TextStyle(color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (id) {
+            // Switching classrooms resets the student and is purely local.
+            store.selectClassroom(id);
             onChanged();
           },
         ),
