@@ -1,10 +1,12 @@
 package app.taptosay
 
+import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,6 +18,12 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterActivity() {
+
+    companion object {
+        // Explicit broadcast action carrying the result of a PackageInstaller
+        // session commit (silent self-update).
+        const val ACTION_INSTALL_STATUS = "app.taptosay.INSTALL_STATUS"
+    }
 
     private lateinit var dpm: DevicePolicyManager
     private lateinit var admin: ComponentName
@@ -111,14 +119,81 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Hand a downloaded APK to the system installer. As device owner the
-     * REQUEST_INSTALL_PACKAGES permission is auto-granted, so the user just
-     * confirms Install on the system prompt (no Settings detour).
+     * Install a downloaded APK.
+     *
+     * Preferred path — when we are the DEVICE OWNER: a PackageInstaller SESSION.
+     * AOSP waives the user-action requirement for a device owner
+     * (PackageInstallerSession.isInstallerDeviceOwnerOrAffiliatedProfileOwner),
+     * so this installs with NO "unknown sources" prompt and without disturbing
+     * the kiosk lock. This is the branch that makes an enrolled tablet update
+     * itself silently.
+     *
+     * Fallback path — BYOD / Guided-Access (not device owner), or if the session
+     * path fails for any reason: hand the APK to the SYSTEM installer via
+     * ACTION_VIEW. On first use Android asks the user to allow installs from
+     * this source; that grant persists on later updates.
      */
     private fun installApk(path: String): Boolean {
+        val file = File(path)
+        if (!file.exists()) return false
+        if (dpm.isDeviceOwnerApp(packageName) && installViaSession(file)) {
+            return true
+        }
+        return launchSystemInstaller(file)
+    }
+
+    /**
+     * Silent self-update via a PackageInstaller session. Returns false on any
+     * failure so the caller can fall back to the visible installer.
+     */
+    private fun installViaSession(file: File): Boolean {
+        var sessionId = -1
         return try {
-            val file = File(path)
-            if (!file.exists()) return false
+            val pi = packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(
+                PackageInstaller.SessionParams.MODE_FULL_INSTALL
+            )
+            if (Build.VERSION.SDK_INT >= 31) {
+                // Ask the platform NOT to require user confirmation. For a
+                // device-owner installer AOSP then performs the install
+                // silently. On older APIs the flag does not exist, so we skip
+                // it and the device-owner exemption still applies.
+                params.setRequireUserAction(
+                    PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
+                )
+            }
+            sessionId = pi.createSession(params)
+            pi.openSession(sessionId).use { session ->
+                file.inputStream().use { input ->
+                    session.openWrite("base.apk", 0, file.length()).use { out ->
+                        input.copyTo(out)
+                        session.fsync(out)
+                    }
+                }
+                val intent = Intent(this, UpdateInstallReceiver::class.java).apply {
+                    action = ACTION_INSTALL_STATUS + sessionId
+                }
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                val pending = PendingIntent.getBroadcast(this, sessionId, intent, flags)
+                session.commit(pending.intentSender)
+            }
+            true
+        } catch (e: Exception) {
+            ProvisioningLog.record(this, "INSTALL", "session install failed: ${e.message}")
+            if (sessionId != -1) {
+                try {
+                    packageManager.packageInstaller.abandonSession(sessionId)
+                } catch (_: Exception) {
+                    // best-effort cleanup
+                }
+            }
+            false
+        }
+    }
+
+    /** Show the system installer UI (the pre-existing behaviour). */
+    private fun launchSystemInstaller(file: File): Boolean {
+        return try {
             // A device-owner kiosk (lock task) would block the system installer
             // UI. Release the lock so the confirm prompt is usable; onResume
             // re-engages it after the update installs/restarts the app.

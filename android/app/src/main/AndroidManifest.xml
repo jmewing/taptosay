@@ -78,6 +78,10 @@
                 <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
             </intent-filter>
         </receiver>
+        <!-- Receives the result of a silent self-update PackageInstaller session. -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
         <!-- Shares a downloaded update APK with the system installer. -->
         <provider
             android:name="androidx.core.content.FileProvider"
