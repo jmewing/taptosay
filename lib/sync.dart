@@ -168,11 +168,16 @@ class ConfigStore {
   String? get authPassword => _authPassword;
   String? get serverUrl => _serverUrl;
 
-  /// PINs: only the server's synced value. Never fall back to a hardcoded
-  /// default — if the device has not synced yet, the PIN is empty and the
-  /// Exit action reports it as unconfigured instead of accepting a preset.
-  String get settingsPin => _settingsPin ?? '';
-  String get exitPin => _exitPin ?? '';
+  /// Candidate base URLs to try (configured server first, then public
+  /// fallbacks). Exposed so the self-updater can probe the same hosts.
+  List<String> get serverCandidates => _serverCandidates;
+
+  /// PINs: the server's synced value when present, else the built-in default
+  /// `2580`. The default lets a freshly-installed, never-synced tablet still be
+  /// used and configured on its own (the app works standalone with its built-in
+  /// ACC board; connecting to the server then overrides everything).
+  String get settingsPin => (_settingsPin == null || _settingsPin!.isEmpty) ? '2580' : _settingsPin!;
+  String get exitPin => (_exitPin == null || _exitPin!.isEmpty) ? '2580' : _exitPin!;
 
   /// True when provisioned with a classroom code (`C…`).
   bool get isClassroom => _classroomStudents != null;

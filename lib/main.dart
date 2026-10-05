@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'provision_screen.dart';
 import 'sync.dart';
 import 'tile_face.dart';
+import 'updater.dart';
 import 'vocab.dart';
 
 /// TapToSay — category-based tap-to-speak AAC app (Android-first).
@@ -65,12 +68,81 @@ class _CategoryHomeState extends State<CategoryHome> {
   void initState() {
     super.initState();
     _initTts();
-    _syncOnLaunch();
+    _deviceSync();
+    // Look for a newer build a moment after first paint (non-blocking).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+    // Safety net for a kiosk that never relaunches: a full device sync (config
+    // + app update) every 6h, so the tablet stays current on both.
+    _updateTimer = Timer.periodic(const Duration(hours: 6), (_) => _deviceSync());
+  }
+
+  Timer? _updateTimer;
+  bool _updatePromptOpen = false;
+
+  @override
+  void dispose() {
+    _updateTimer?.cancel();
+    _tts.stop();
+    super.dispose();
+  }
+
+  /// Ask the server whether a newer build is published, and offer to install it.
+  /// Runs on launch, after every sync, and every 6h. This is how a new APK on
+  /// the website reaches every tablet without anyone flashing or re-installing
+  /// by hand.
+  Future<void> _checkForUpdate() async {
+    if (_updatePromptOpen) return;
+    try {
+      final info = await Updater.check();
+      if (info == null || !mounted) return;
+      _updatePromptOpen = true;
+      final go = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Update available'),
+          content: Text('TapToSay ${info.versionName} is ready to install.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Later')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Install')),
+          ],
+        ),
+      );
+      _updatePromptOpen = false;
+      if (go != true || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Downloading update…')),
+      );
+      final ok = await Updater.downloadAndInstall(info);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Update downloaded — confirm Install to finish.'
+              : 'Update failed. Please try again later.'),
+        ),
+      );
+    } catch (_) {
+      _updatePromptOpen = false;
+      // offline / no update — never block the app
+    }
   }
 
   /// On launch, fetch config from the server (if provisioned). Silently
   /// falls back to the offline cache / built-ins on any failure.
-  Future<void> _syncOnLaunch() async {
+  /// One "device sync": refresh configuration from the server (if provisioned)
+  /// and then check for a newer app build. Runs on launch, on the manual Sync
+  /// button, and every 6h.
+  ///
+  /// Background (auto) runs are QUIET: an offline/failed config sync shows only
+  /// a brief message at the bottom of the screen — never a pop-up or dialog.
+  /// Returns true when the config sync succeeded (or wasn't needed).
+  Future<bool> _deviceSync({bool manual = false}) async {
+    var cfgOk = true;
     try {
       await ConfigStore.instance.load();
       // If the tablet was provisioned via QR/NFC, the admin-extras bundle has
@@ -79,12 +151,30 @@ class _CategoryHomeState extends State<CategoryHome> {
       if (!ConfigStore.instance.isProvisioned) {
         await _applyProvisioningExtras();
       }
-      if (!ConfigStore.instance.isProvisioned) return;
-      await ConfigStore.instance.sync();
-      if (mounted) setState(() {});
+      if (ConfigStore.instance.isProvisioned) {
+        await ConfigStore.instance.sync();
+        if (mounted) setState(() {});
+      }
     } catch (_) {
       // offline or credentials changed — keep the cache / built-ins
+      cfgOk = false;
     }
+    // Quiet failure notice: a small bottom message only. Never a pop-up.
+    if (!cfgOk && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sync failed — offline'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else if (manual && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Synced'), duration: Duration(seconds: 2)),
+      );
+    }
+    // Config sync done (or skipped) — now look for a newer app build.
+    await _checkForUpdate();
+    return cfgOk;
   }
 
   /// Read the device-owner provisioning extras from the native side and apply
@@ -206,36 +296,24 @@ class _CategoryHomeState extends State<CategoryHome> {
             icon: const Icon(Icons.sync, size: 22),
             tooltip: 'Sync config',
             onPressed: () async {
-              try {
-                await ConfigStore.instance.sync();
-                if (!mounted) return;
-                setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('✅ Synced')),
-                );
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Sync failed: $e')),
-                );
-              }
+              await _deviceSync(manual: true);
             },
           ),
           IconButton(
             icon: const Icon(Icons.settings, size: 22),
             tooltip: 'Connect / settings',
             onPressed: () async {
-              final pin = ConfigStore.instance.settingsPin;
-              if (pin.isEmpty) {
-                // Not synced yet; allow setup once so the tablet can connect
-                // for the very first time without a PIN. After sync it will be
-                // protected.
+              // Before the tablet has EVER connected, let setup through without a
+              // code so a freshly-installed app can be configured (Jeremy,
+              // 2026-10-05). Once provisioned, the server's settings PIN gates it.
+              if (!ConfigStore.instance.isProvisioned) {
                 await Navigator.of(context).push<bool>(
                   MaterialPageRoute(builder: (_) => const ProvisionScreen()),
                 );
                 if (mounted) setState(() {});
                 return;
               }
+              final pin = ConfigStore.instance.settingsPin;
               final ok = await _promptPin(pin);
               if (!mounted) return;
               if (!ok) {
@@ -274,36 +352,11 @@ class _CategoryHomeState extends State<CategoryHome> {
           ),
         ],
       ),
-      body: ConfigStore.instance.isProvisioned
-          ? _categoryGrid(context, categories)
-          : _unprovisioned(context),
-    );
-  }
-
-  Widget _unprovisioned(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'This tablet is not connected yet.',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: () async {
-                final done = await Navigator.of(context).push<bool>(
-                  MaterialPageRoute(builder: (_) => const ProvisionScreen()),
-                );
-                if (done == true && mounted) setState(() {});
-              },
-              child: const Text('Set up tablet'),
-            ),
-          ],
-        ),
-      ),
+      // Always show the board. An unconnected, freshly-installed tablet runs on
+      // the built-in default ACC board (the local vocab fallback); connecting to
+      // the server then replaces it with the synced config. The app is usable
+      // out of the box — no server connection required first.
+      body: _categoryGrid(context, categories),
     );
   }
 
