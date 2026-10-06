@@ -306,41 +306,36 @@ class _CategoryHomeState extends State<CategoryHome> {
         // (Expanded) so a long name ellipsizes instead of widening the box and
         // shoving 'Tap To Say' off-centre (Jeremy, 2026-10-06).
         title: store.hasRoster
-            ? LayoutBuilder(
-                builder: (context, constraints) {
-                  // Dropdowns share the leftover space but are inset so they are
-                  // ~75% of the available width, leaving breathing room between
-                  // each dropdown and the icons (Jeremy, 2026-10-06).
-                  final inset = constraints.maxWidth * 0.125;
-                  return Padding(
-                    padding: EdgeInsets.symmetric(horizontal: inset),
-                    child: Row(
-                      children: [
-                        if (store.isTeacher)
-                          Expanded(
-                            child: _ClassroomDropdown(
-                                onChanged: () => setState(() {})),
-                          )
-                        else
-                          const Spacer(),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 8),
-                          child: Text(
-                            'Tap To Say',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        Expanded(
-                          child: _StudentDropdown(
-                              onChanged: () => setState(() {})),
-                        ),
-                      ],
+            ? Row(
+                children: [
+                  if (store.isTeacher)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: _ClassroomDropdown(
+                            onChanged: () => setState(() {})),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                      'Tap To Say',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold),
                     ),
-                  );
-                },
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: _StudentDropdown(
+                          onChanged: () => setState(() {})),
+                    ),
+                  ),
+                ],
               )
             : const Text(
                 'Tap To Say',
