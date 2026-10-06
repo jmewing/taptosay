@@ -285,7 +285,7 @@ class _CategoryHomeState extends State<CategoryHome> {
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 44,
-        centerTitle: !store.hasRoster,
+        centerTitle: true,
         // The running app version sits at the very top-left (leading slot).
         leadingWidth: _appVersion.isEmpty ? 4 : 62,
         leading: _appVersion.isEmpty
@@ -301,23 +301,30 @@ class _CategoryHomeState extends State<CategoryHome> {
                   ),
                 ),
               ),
-        // Roster mode: classroom to the LEFT of the title, student to the
-        // RIGHT of it, then Sync / Settings / Exit follow on the right.
+        // Roster mode: classroom dropdown to the LEFT of the title, student
+        // dropdown to the RIGHT. Both are bounded to the leftover space
+        // (Expanded) so a long name ellipsizes instead of widening the box and
+        // shoving 'Tap To Say' off-centre (Jeremy, 2026-10-06).
         title: store.hasRoster
             ? Row(
                 children: [
                   if (store.isTeacher)
-                    SizedBox(
-                      width: 168,
+                    Expanded(
                       child: _ClassroomDropdown(
                           onChanged: () => setState(() {})),
+                    )
+                  else
+                    const Spacer(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      'Tap To Say',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold),
                     ),
-                  const Text(
-                    'Tap To Say',
-                    style: TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                  if (store.isTeacher) const SizedBox(width: 6),
                   Expanded(
                     child: _StudentDropdown(
                         onChanged: () => setState(() {})),
