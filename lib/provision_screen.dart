@@ -102,11 +102,17 @@ class _ProvisionScreenState extends State<ProvisionScreen> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _student,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    keyboardType: TextInputType.text,
+                    // Accept alphanumerics so a teacher code (T…), a classroom
+                    // code (C…), or a plain numeric student ID can all be typed
+                    // by hand — not just delivered by the provisioning QR
+                    // (Jeremy, 2026-10-06).
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+                    ],
                     decoration: const InputDecoration(
-                      labelText: 'Student ID',
-                      hintText: 'Numbers only',
+                      labelText: 'Tablet ID',
+                      hintText: 'Student ID, or a teacher (T…) / class (C…) code',
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
