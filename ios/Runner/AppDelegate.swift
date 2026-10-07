@@ -29,6 +29,7 @@ import UIKit
     //   getAppVersion         -> build number + short version (same shape as Android)
     //   installApk            -> false      (iOS updates come from the App Store,
     //                                        not a sideloaded APK)
+    //   openUrl               -> open a URL (e.g. the App Store listing) via the OS
     guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "TapToSayKiosk") else {
       return
     }
@@ -51,6 +52,20 @@ import UIKit
         let code = Int(info?["CFBundleVersion"] as? String ?? "0") ?? 0
         let name = info?["CFBundleShortVersionString"] as? String ?? ""
         result(["versionCode": code, "versionName": name])
+      case "openUrl":
+        // Open a URL with the OS — used to send the user to the App Store
+        // listing for a newer version. Returns whether it opened.
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let url = URL(string: urlString) else {
+          result(false)
+          return
+        }
+        DispatchQueue.main.async {
+          UIApplication.shared.open(url, options: [:]) { ok in
+            result(ok)
+          }
+        }
       default:
         result(FlutterMethodNotImplemented)
       }

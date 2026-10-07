@@ -292,6 +292,25 @@ class MainActivity : FlutterActivity() {
                         val path = call.argument<String>("path")
                         result.success(path != null && installApk(path))
                     }
+                    "openUrl" -> {
+                        // Open a URL with the OS (e.g. the App Store listing). The
+                        // iOS-only update nudge calls this; Android keeps its own
+                        // APK self-update path, so this is rarely hit here but must
+                        // exist so the shared channel never errors.
+                        val url = call.argument<String>("url")
+                        if (url == null) {
+                            result.success(false)
+                        } else {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(intent)
+                                result.success(true)
+                            } catch (_: Exception) {
+                                result.success(false)
+                            }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }

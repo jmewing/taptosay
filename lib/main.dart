@@ -138,6 +138,45 @@ class _CategoryHomeState extends State<CategoryHome> {
       _updatePromptOpen = false;
       // offline / no update — never block the app
     }
+    // iOS has no sideload path, so a self-update is impossible there. Instead,
+    // if the App Store has a newer version than this build, offer to open the
+    // store listing. Inert until 1.0 is live (Apple's Lookup API returns no
+    // results before then, and this no-ops on Android).
+    await _checkAppStoreUpdate();
+  }
+
+  /// Offer to update from the App Store when a newer iOS version is published.
+  /// One non-blocking prompt; the user taps through to the store themselves.
+  Future<void> _checkAppStoreUpdate() async {
+    if (_updatePromptOpen) return;
+    try {
+      final info = await Updater.checkAppStore();
+      if (info == null || !mounted) return;
+      _updatePromptOpen = true;
+      final go = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Update available'),
+          content: Text(
+              'TapToSay ${info.version} is available on the App Store.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Later')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Open App Store')),
+          ],
+        ),
+      );
+      _updatePromptOpen = false;
+      if (go != true) return;
+      await Updater.openStore(info.storeUrl);
+    } catch (_) {
+      _updatePromptOpen = false;
+      // offline / no update — never block the app
+    }
   }
 
   /// On launch, fetch config from the server (if provisioned). Silently
