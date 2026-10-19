@@ -98,10 +98,10 @@ class _CategoryHomeState extends State<CategoryHome> {
   /// Runs on launch, after every sync, and every 6h. This is how a new APK on
   /// the website reaches every tablet without anyone flashing or re-installing
   /// by hand.
-  Future<void> _checkForUpdate() async {
+  Future<void> _checkForUpdate({String event = 'launch'}) async {
     if (_updatePromptOpen) return;
     try {
-      final info = await Updater.check();
+      final info = await Updater.check(event: event);
       if (info == null || !mounted) return;
       _updatePromptOpen = true;
       final go = await showDialog<bool>(
@@ -220,7 +220,7 @@ class _CategoryHomeState extends State<CategoryHome> {
       );
     }
     // Config sync done (or skipped) — now look for a newer app build.
-    await _checkForUpdate();
+    await _checkForUpdate(event: 'refresh');
     return cfgOk;
   }
 

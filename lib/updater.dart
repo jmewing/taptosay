@@ -64,7 +64,10 @@ class Updater {
   /// read it from the same place.
   static const String _updateBase = 'https://taptosay.app';
 
-  static Future<UpdateInfo?> check() async {
+  /// [event] labels WHY the check ran: 'launch' on startup, 'refresh' for the
+  /// periodic/manual sync. It is appended as a query string and is purely an
+  /// event label — it carries no device, install, or user identifier.
+  static Future<UpdateInfo?> check({String event = 'launch'}) async {
     if (!Platform.isAndroid) return null;
     final current = await currentVersionCode();
     if (current == 0) return null; // couldn't read our own version
@@ -72,8 +75,8 @@ class Updater {
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 8);
       try {
-        final req =
-            await client.getUrl(Uri.parse('$_updateBase/download/latest.json'));
+        final req = await client
+            .getUrl(Uri.parse('$_updateBase/download/latest.json?$event'));
         final res = await req.close();
         if (res.statusCode != 200) return null;
         final body = await res.transform(utf8.decoder).join();
