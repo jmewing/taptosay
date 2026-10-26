@@ -237,50 +237,21 @@ class _CategoryHomeState extends State<CategoryHome> {
         await _applyProvisioningExtras();
       }
       if (ConfigStore.instance.isProvisioned) {
-        debugPrint('[diag] pre-sync school=${ConfigStore.instance.debugSchoolId} '
-            'student=${ConfigStore.instance.debugStudentId} '
-            'server=${ConfigStore.instance.serverUrl}');
         await ConfigStore.instance.sync();
-        final c2 = ConfigStore.instance.categories;
-        var sym2 = 0, tot2 = 0;
-        for (final cat in c2) {
-          if (cat.symbol != null && cat.symbol!.isNotEmpty) sym2++;
-          for (final sg in cat.sayings) {
-            tot2++;
-            if (sg.symbol != null && sg.symbol!.isNotEmpty) sym2++;
-          }
-        }
-        debugPrint('[diag] post-sync cats=${c2.length} sayings=$tot2 withSymbol=$sym2');
-        // Config arrived: pull any tile face PNGs that are not on disk yet.
+        // Config arrived: pull any tile face that is not on disk yet.
+        //
         // This is the ONLY place images are fetched (launch sync, manual Sync
-        // button, 6-hourly auto sync). It is incremental — already-cached URLs
-        // are skipped and known-404s are never retried — so the server serves
-        // each image once per tablet rather than once per tile per draw.
+        // button, 6-hourly auto sync). Incremental by design: already-cached
+        // URLs are skipped and known-404s are never retried, so the server
+        // serves each image once per tablet rather than once per draw.
         try {
-          final cats = ConfigStore.instance.allBoards.toList();
-          var withSym = 0, withMedia = 0, sayings = 0;
-          for (final c in cats) {
-            if (c.symbol != null && c.symbol!.isNotEmpty) withSym++;
-            if (c.mediaId != null) withMedia++;
-            for (final s in c.sayings) {
-              sayings++;
-              if (s.symbol != null && s.symbol!.isNotEmpty) withSym++;
-              if (s.mediaId != null) withMedia++;
-            }
-          }
-          debugPrint('[diag] provisioned=${ConfigStore.instance.isProvisioned} '
-              'cats=${cats.length} sayings=$sayings '
-              'withSymbol=$withSym withMedia=$withMedia');
-          debugPrint('[diag] sampleSymbolUrl=${ConfigStore.instance.symbolUrl("A")}');
           await FaceCache.instance.syncAll(allFaceUrls());
-        } catch (e) {
-          debugPrint('[diag] syncAll threw: $e');
-          // Image download is best-effort; the UI already has emoji fallbacks.
+        } catch (_) {
+          // Best-effort; every tile already has an emoji fallback.
         }
         if (mounted) setState(() {});
       }
     } catch (e) {
-      debugPrint('[diag] sync threw: $e');
       // offline or credentials changed — keep the cache / built-ins
       cfgOk = false;
     }

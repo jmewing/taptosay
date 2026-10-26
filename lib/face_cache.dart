@@ -121,17 +121,6 @@ class FaceCache {
       if (_missing.contains(u)) continue; // known 404 — never retry
       pending.add(u);
     }
-    final all = urls.where((u) => u != null && u.isNotEmpty).toList();
-    debugPrint('[faces] dir=${d.path} cached=${_paths.length} missing=${_missing.length} urls=${all.length} pending=${pending.length}');
-    if (_paths.isNotEmpty) {
-      final k = _paths.keys.first;
-      debugPrint('[faces] sample key=$k');
-      debugPrint('[faces] sample path=${_paths[k]} exists=${File(_paths[k]!).existsSync()}');
-    }
-    if (all.isNotEmpty) debugPrint('[faces] first url=${all.first}');
-    if (pending.isNotEmpty) {
-      debugPrint('[faces] first=${pending.first}');
-    }
     if (pending.isEmpty) return 0;
 
     final client = HttpClient()..connectionTimeout = timeout;
@@ -163,7 +152,6 @@ class FaceCache {
         _paths[url] = file.path;
         written++;
       } catch (e) {
-        debugPrint('[faces] FAIL $url -> $e');
         // timeout / DNS / TLS / hang: leave uncached, keep the emoji fallback.
         // Critically, do NOT block the UI waiting — this runs off the render path.
       }
@@ -175,7 +163,6 @@ class FaceCache {
 
     await _saveIndex(d);
     if (missingChanged) await _saveMissing(d);
-    debugPrint('[faces] wrote=$written missing=${_missing.length} cached=${_paths.length}');
     return written;
   }
 
