@@ -168,6 +168,10 @@ class ConfigStore {
   String? get authPassword => _authPassword;
   String? get serverUrl => _serverUrl;
 
+  // Diagnostics only: expose the raw identity for log lines.
+  String get debugSchoolId => _schoolId ?? '';
+  String get debugStudentId => _studentId ?? '';
+
   /// Candidate base URLs to try (configured server first, then public
   /// fallbacks). Exposed so the self-updater can probe the same hosts.
   List<String> get serverCandidates => _serverCandidates;
@@ -243,6 +247,34 @@ class ConfigStore {
   /// Categories for the current view: the selected student's board, else the
   /// selected classroom's default board (teacher mode), else this tablet's own
   /// cached config (else the built-in fallback).
+  /// EVERY board this tablet might display: its own config, plus each
+  /// classroom board and each student board delivered in a teacher payload.
+  ///
+  /// The [categories] getter returns BUILT-INS when teacher mode has no student
+  /// selected — walking it alone therefore misses every real board, which is
+  /// why tile images were never downloaded for a classroom tablet.
+  Iterable<Category> get allBoards sync* {
+    final own = _cachedCategories;
+    if (own != null) {
+      for (final c in own) {
+        yield c;
+      }
+    }
+    final classes = _classrooms;
+    if (classes != null) {
+      for (final cl in classes) {
+        for (final c in cl.categories) {
+          yield c;
+        }
+        for (final st in cl.students) {
+          for (final c in st.categories) {
+            yield c;
+          }
+        }
+      }
+    }
+  }
+
   List<Category> get categories {
     final sel = selectedStudent;
     if (sel != null) return sel.categories;

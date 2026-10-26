@@ -5,10 +5,45 @@ import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 import 'provision_screen.dart';
+import 'face_cache.dart';
 import 'sync.dart';
 import 'tile_face.dart';
 import 'updater.dart';
 import 'vocab.dart';
+
+/// Resolve the remote URL for a tile's face: an uploaded photo wins over a
+/// Mulberry AAC symbol. Pure string work — no network I/O.
+///
+/// Note: only letters A–Z exist as `/mulberry/*.png` on the API (digits and
+/// emoji-symbols 404). Those simply never download, their URL is remembered as
+/// missing, and the tile draws its emoji. That is intended.
+String? faceUrlFor({String? symbol, int? mediaId}) {
+  final media = ConfigStore.instance.mediaUrl(mediaId);
+  if (media != null && media.isNotEmpty) return media;
+  return ConfigStore.instance.symbolUrl(symbol);
+}
+
+/// Every face URL the current configuration references, including drill-downs.
+Iterable<String?> allFaceUrls() sync* {
+  List<Category> cats;
+  try {
+    cats = ConfigStore.instance.allBoards.toList();
+  } catch (_) {
+    return;
+  }
+  for (final c in cats) {
+    yield faceUrlFor(symbol: c.symbol, mediaId: c.mediaId);
+    for (final s in c.sayings) {
+      yield faceUrlFor(symbol: s.symbol, mediaId: s.mediaId);
+      final sub = s.sub;
+      if (sub != null) {
+        for (final t in sub) {
+          yield faceUrlFor(symbol: t.symbol, mediaId: t.mediaId);
+        }
+      }
+    }
+  }
+}
 
 /// TapToSay — category-based tap-to-speak AAC app (Android-first).
 /// Landscape-only. Home = category grid (People / Food / I Feel / I Want /
@@ -70,6 +105,9 @@ class _CategoryHomeState extends State<CategoryHome> {
     super.initState();
     _initTts();
     _loadVersion();
+    // Prime the on-disk face cache BEFORE the first tile paints, so a warm
+    // tablet draws straight from storage with no network and no spinner.
+    FaceCache.instance.load();
     _deviceSync();
     // Look for a newer build a moment after first paint (non-blocking).
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
@@ -199,10 +237,50 @@ class _CategoryHomeState extends State<CategoryHome> {
         await _applyProvisioningExtras();
       }
       if (ConfigStore.instance.isProvisioned) {
+        debugPrint('[diag] pre-sync school=${ConfigStore.instance.debugSchoolId} '
+            'student=${ConfigStore.instance.debugStudentId} '
+            'server=${ConfigStore.instance.serverUrl}');
         await ConfigStore.instance.sync();
+        final c2 = ConfigStore.instance.categories;
+        var sym2 = 0, tot2 = 0;
+        for (final cat in c2) {
+          if (cat.symbol != null && cat.symbol!.isNotEmpty) sym2++;
+          for (final sg in cat.sayings) {
+            tot2++;
+            if (sg.symbol != null && sg.symbol!.isNotEmpty) sym2++;
+          }
+        }
+        debugPrint('[diag] post-sync cats=${c2.length} sayings=$tot2 withSymbol=$sym2');
+        // Config arrived: pull any tile face PNGs that are not on disk yet.
+        // This is the ONLY place images are fetched (launch sync, manual Sync
+        // button, 6-hourly auto sync). It is incremental — already-cached URLs
+        // are skipped and known-404s are never retried — so the server serves
+        // each image once per tablet rather than once per tile per draw.
+        try {
+          final cats = ConfigStore.instance.allBoards.toList();
+          var withSym = 0, withMedia = 0, sayings = 0;
+          for (final c in cats) {
+            if (c.symbol != null && c.symbol!.isNotEmpty) withSym++;
+            if (c.mediaId != null) withMedia++;
+            for (final s in c.sayings) {
+              sayings++;
+              if (s.symbol != null && s.symbol!.isNotEmpty) withSym++;
+              if (s.mediaId != null) withMedia++;
+            }
+          }
+          debugPrint('[diag] provisioned=${ConfigStore.instance.isProvisioned} '
+              'cats=${cats.length} sayings=$sayings '
+              'withSymbol=$withSym withMedia=$withMedia');
+          debugPrint('[diag] sampleSymbolUrl=${ConfigStore.instance.symbolUrl("A")}');
+          await FaceCache.instance.syncAll(allFaceUrls());
+        } catch (e) {
+          debugPrint('[diag] syncAll threw: $e');
+          // Image download is best-effort; the UI already has emoji fallbacks.
+        }
         if (mounted) setState(() {});
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[diag] sync threw: $e');
       // offline or credentials changed — keep the cache / built-ins
       cfgOk = false;
     }
@@ -531,9 +609,13 @@ class _StudentDropdown extends StatelessWidget {
               ),
           ],
           onChanged: (id) {
-            // Roster is already cached — switching is local, no network call.
+            // Roster is already cached — switching itself is local. Any tile
+            // images this student's board needs are pulled once, here, and not
+            // on every tile draw. Cached URLs are skipped, so re-selecting a
+            // student who has already been opened is free.
             store.selectStudent(id);
             onChanged();
+            FaceCache.instance.syncAll(allFaceUrls()).catchError((_) => 0);
           },
         ),
       ),
@@ -609,8 +691,10 @@ class _CategoryTile extends StatelessWidget {
             category: category.name,
             label: category.name,
             emoji: category.emoji,
-            symbolUrl: ConfigStore.instance.symbolUrl(category.symbol),
-            mediaUrl: ConfigStore.instance.mediaUrl(category.mediaId),
+            facePath: FaceCache.instance.pathFor(faceUrlFor(
+              symbol: category.symbol,
+              mediaId: category.mediaId,
+            )),
             color: category.color,
             labelFontSize: 20,
             badgeSize: 96,
@@ -731,8 +815,10 @@ class _WordTile extends StatelessWidget {
             category: category,
             label: saying.label,
             emoji: saying.emoji,
-            symbolUrl: ConfigStore.instance.symbolUrl(saying.symbol),
-            mediaUrl: ConfigStore.instance.mediaUrl(saying.mediaId),
+            facePath: FaceCache.instance.pathFor(faceUrlFor(
+              symbol: saying.symbol,
+              mediaId: saying.mediaId,
+            )),
             color: saying.color,
             labelFontSize: 22,
             badgeSize: 96,
