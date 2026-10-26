@@ -59,6 +59,23 @@ MACVER=$(ssh -o BatchMode=yes "$MAC" "grep '^version:' $MACSRC/pubspec.yaml | aw
 [ "$MACVER" = "$NEW" ] || fail "Mac has version '$MACVER', expected '$NEW'"
 log "mac version confirmed: $MACVER"
 
+# ---- 3b. CODE PARITY: refuse to build iOS from different code than Android --
+# Jeremy, 2026-10-26: "We don't want shit in one app that is not in the other."
+# A matching version number is not enough -- the CODE has to match. This
+# compares every shared source file between the two hosts and aborts on any
+# difference, so a stale Mac checkout can never ship a divergent app.
+log "checking source parity..."
+if ! bash "$SRC/scripts/source-parity-check.sh" "$SRC" "$MAC" 2>&1 | sed 's/^/    /'; then
+  fail "source parity check failed -- the two apps would differ"
+fi
+log "source parity confirmed"
+
+# ---- 3b. prove BOTH platforms are built from IDENTICAL source -------------
+# Jeremy, 2026-10-26: "We don't want shit in one app that is not in the other."
+# The version matching is not enough -- the CODE must match. Hash every source
+# file that goes into the binary and compare; refuse to build iOS from anything
+# other than the exact bytes Android was built from.
+
 log "building iOS on Mac (release, no codesign)..."
 ssh -o BatchMode=yes "$MAC" "
   export PATH=\$HOME/flutter/bin:/opt/homebrew/bin:\$PATH
