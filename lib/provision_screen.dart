@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'qr_scan_screen.dart';
 import 'sync.dart';
 
 /// Connect/settings: enter the four remote credentials the tablet presents
@@ -25,6 +26,35 @@ class _ProvisionScreenState extends State<ProvisionScreen> {
 
   bool _busy = false;
   String? _error;
+
+  /// Scan the school's setup QR and drop its four values into the fields.
+  ///
+  /// A parent moving the app to a new device would otherwise have to retype a
+  /// long server URL and auth password by hand. Nothing is saved here — the
+  /// form is only pre-filled, so the values stay visible and editable, and
+  /// tapping Connect still does the real work (and is what proves they're
+  /// right).
+  Future<void> _scanQr() async {
+    final setup = await Navigator.of(context).push<ScannedSetup>(
+      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+    );
+    if (setup == null || !mounted) return;
+
+    setState(() {
+      if (setup.schoolId.isNotEmpty) _school.text = setup.schoolId;
+      if (setup.studentId.isNotEmpty) _student.text = setup.studentId;
+      if (setup.authPassword.isNotEmpty) _auth.text = setup.authPassword;
+      if (setup.serverUrl.isNotEmpty) _url.text = setup.serverUrl;
+      _error = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Settings filled from QR — tap Connect to finish.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -98,6 +128,15 @@ class _ProvisionScreenState extends State<ProvisionScreen> {
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _scanQr,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Scan QR code from your school'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

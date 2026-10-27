@@ -4,6 +4,11 @@
     <!-- In-app self-update: download the newest APK and hand it to the
          system installer. As device owner this is auto-granted. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Scan the provisioning QR on the Settings screen so a parent moving to a
+         new device can fill in all four fields instead of typing them. Not
+         required: no camera just means the QR button reports it can't scan. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="TapToSay"
         android:name="${applicationName}"
