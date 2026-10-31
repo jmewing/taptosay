@@ -113,11 +113,44 @@ class _ProvisionScreenState extends State<ProvisionScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Enter the details provided by your school.',
+                    'Scan the QR code from your school and every field below fills in.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 20),
+                  // Scan FIRST, above every field. Sitting under School ID made
+                  // it read as "type the school, then scan" — the opposite of
+                  // the intent. This is the primary action; manual entry is the
+                  // fallback (Jeremy, 2026-10-27).
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _scanQr,
+                    icon: const Icon(Icons.qr_code_scanner, size: 22),
+                    label: const Text(
+                      'Scan QR code from your school',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      backgroundColor: const Color(0xFF00838F),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  // Divider makes the two routes obvious: scan above, or type
+                  // below. Without it the fields looked mandatory-before-scan.
+                  Row(
+                    children: const [
+                      Expanded(child: Divider()),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'or enter manually',
+                          style: TextStyle(color: Colors.black45, fontSize: 13),
+                        ),
+                      ),
+                      Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
                   TextFormField(
                     controller: _school,
                     keyboardType: TextInputType.number,
@@ -128,15 +161,6 @@ class _ProvisionScreenState extends State<ProvisionScreen> {
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 14),
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : _scanQr,
-                    icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text('Scan QR code from your school'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(

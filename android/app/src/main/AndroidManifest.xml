@@ -14,11 +14,35 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
+        <!--
+            Landscape lock on large screens (Jeremy, 2026-10-27).
+
+            Android 16 (API 36) IGNORES android:screenOrientation on any display
+            whose smallest width is >= 600dp. The SM-X308U reports sw600dp, so
+            the manifest orientation was being discarded at runtime —
+            mCurrentAppOrientation came back SCREEN_ORIENTATION_UNSPECIFIED —
+            and a TapToSay board could render in portrait.
+
+            This property is the documented opt-out: it restores the previous
+            behaviour by placing the app in compatibility mode, so
+            android:screenOrientation="landscape" on MainActivity applies again.
+
+            IMPORTANT — this is temporary by design. Google states the opt-out
+            stops working once the app targets API 37: orientation restrictions
+            are ignored permanently for sw600dp+ at that point. When bumping
+            targetSdk to 37, replace this with a runtime approach
+            (setPreferredOrientations + handling reconfiguration) or make the
+            board genuinely adapt to portrait.
+        -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:screenOrientation="landscape"
+            android:resizeableActivity="false"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

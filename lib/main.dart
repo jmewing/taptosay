@@ -524,6 +524,12 @@ class _CategoryHomeState extends State<CategoryHome> {
               category: cat,
               onTap: () {
                 _speak(cat.name); // speak the category name out loud
+                // A category with NO words is a single-tap tile: it speaks and
+                // stops. Pushing the word grid here opened an empty screen with
+                // no words and no back affordance beyond the system bar, which
+                // read as a phantom sub-menu (Jeremy, 2026-10-31).
+                // Mirrors the guard already used by _WordTile below.
+                if (cat.sayings.isEmpty) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => WordGridScreen(
